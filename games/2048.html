@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2048 ぱずる</title>
+<style>
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Hiragino Kaku Gothic Pro', 'Yu Gothic', 'Meiryo', sans-serif;
+  background: linear-gradient(135deg, #1a0a2e 0%, #16213e 50%, #0f3460 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(90vw, 90vh - 80px, 500px);
+  margin-bottom: 12px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: clamp(24px, 5vw, 40px);
+  font-weight: 900;
+  background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #ff6b6b);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.score-box {
+  background: rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 6px 16px;
+  text-align: center;
+  min-width: 80px;
+}
+
+.score-label {
+  font-size: clamp(10px, 2vw, 13px);
+  opacity: 0.8;
+}
+
+.score-value {
+  font-size: clamp(18px, 4vw, 28px);
+  font-weight: 900;
+}
+
+.btn {
+  background: rgba(255,255,255,0.15);
+  border: 2px solid rgba(255,255,255,0.3);
+  color: #fff;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: clamp(12px, 2.5vw, 16px);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+.grid-container {
+  position: relative;
+  width: min(90vw, 90vh - 80px, 500px);
+  height: min(90vw, 90vh - 80px, 500px);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2%;
+  flex-shrink: 0;
+}
+
+.grid-bg {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 2%;
+  width: 100%;
+  height: 100%;
+}
+
+.cell-bg {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.tile-layer {
+  position: absolute;
+  top: 2%;
+  left: 2%;
+  width: 96%;
+  height: 96%;
+}
+
+.tile {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-weight: 900;
+  transition: top 0.15s ease, left 0.15s ease;
+  z-index: 1;
+}
+
+.tile.merged {
+  animation: pop 0.25s ease;
+  z-index: 2;
+}
+
+.tile.new-tile {
+  animation: appear 0.25s ease;
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes appear {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.65);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.overlay-text {
+  font-size: clamp(20px, 5vw, 36px);
+  font-weight: 900;
+  text-align: center;
+  padding: 0 10px;
+}
+
+.overlay .btn {
+  font-size: clamp(14px, 3vw, 20px);
+  padding: 10px 24px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">2048</div>
+  <div class="score-box">
+    <div class="score-label">スコア</div>
+    <div class="score-value" id="score">0</div>
+  </div>
+  <button class="btn" id="restart-btn" onclick="initGame()">もういちど<br>あそぶ</button>
+</div>
+
+<div class="grid-container" id="grid-container">
+  <div class="grid-bg">
+    <div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div>
+    <div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div>
+    <div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div>
+    <div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div><div class="cell-bg"></div>
+  </div>
+  <div class="tile-layer" id="tile-layer"></div>
+  <div class="overlay" id="overlay-win">
+    <div class="overlay-text">🎉 おめでとう！<br>2048たっせい！</div>
+    <button class="btn" onclick="continueAfterWin()">つづける</button>
+    <button class="btn" onclick="initGame()">もういちどあそぶ</button>
+  </div>
+  <div class="overlay" id="overlay-lose">
+    <div class="overlay-text">ゲームオーバー</div>
+    <button class="btn" onclick="initGame()">もういちどあそぶ</button>
+  </div>
+</div>
+
+<script>
+const TILE_COLORS = {
+  2:    { bg: '#ffb6c1', color: '#333' },
+  4:    { bg: '#ffd4a3', color: '#333' },
+  8:    { bg: '#ffa048', color: '#fff' },
+  16:   { bg: '#ff7f7f', color: '#fff' },
+  32:   { bg: '#f44336', color: '#fff' },
+  64:   { bg: '#dc143c', color: '#fff' },
+  128:  { bg: '#ffe135', color: '#333' },
+  256:  { bg: '#ffc800', color: '#333' },
+  512:  { bg: '#4cff72', color: '#333' },
+  1024: { bg: '#00e5ff', color: '#333' },
+  2048: { bg: 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #ee5a9f)', color: '#fff' },
+};
+
+let grid, score, tileId, moving, won, winShown;
+const tileLayer = document.getElementById('tile-layer');
+const scoreEl = document.getElementById('score');
+const overlayWin = document.getElementById('overlay-win');
+const overlayLose = document.getElementById('overlay-lose');
+
+// Each cell stores { id, value } or null
+// We also keep a map of id -> DOM element
+
+let tiles = {}; // id -> { el, row, col, value }
+
+function cellSize() { return 96 / 4; } // percent
+function gapSize() { return 96 * 0.02 / 0.96; } // approx gap in %
+// Actually let's compute positions more carefully
+// tile-layer is 96% of container. Grid has 2% gap relative to grid-bg which is 100% of grid-container inner.
+// Simpler: each cell is (100% - 3*gap) / 4 wide, positioned with gap offsets.
+// gap = 2% of tile-layer width
+const GAP_PCT = 2.0833; // 2/96*100
+const CELL_PCT = (100 - 3 * GAP_PCT) / 4;
+
+function tileLeft(col) {
+  return col * (CELL_PCT + GAP_PCT);
+}
+function tileTop(row) {
+  return row * (CELL_PCT + GAP_PCT);
+}
+
+function createTileEl(id, row, col, value, isNew) {
+  const el = document.createElement('div');
+  el.className = 'tile' + (isNew ? ' new-tile' : '');
+  el.dataset.id = id;
+  applyTileStyle(el, row, col, value);
+  tileLayer.appendChild(el);
+  return el;
+}
+
+function applyTileStyle(el, row, col, value) {
+  const style = TILE_COLORS[value] || { bg: '#8e44ad', color: '#fff' };
+  el.style.left = tileLeft(col) + '%';
+  el.style.top = tileTop(row) + '%';
+  el.style.width = CELL_PCT + '%';
+  el.style.height = CELL_PCT + '%';
+  if (style.bg.startsWith('linear')) {
+    el.style.background = style.bg;
+  } else {
+    el.style.background = style.bg;
+  }
+  el.style.color = style.color;
+  // Font size scales with tile
+  el.style.fontSize = value >= 1024 ? 'clamp(14px, 4vmin, 28px)' :
+                      value >= 128 ? 'clamp(16px, 5vmin, 32px)' :
+                      'clamp(20px, 6vmin, 42px)';
+  el.textContent = value;
+}
+
+function initGame() {
+  grid = Array.from({ length: 4 }, () => Array(4).fill(null));
+  score = 0;
+  tileId = 0;
+  moving = false;
+  won = false;
+  winShown = false;
+  scoreEl.textContent = '0';
+  overlayWin.classList.remove('active');
+  overlayLose.classList.remove('active');
+  tileLayer.innerHTML = '';
+  tiles = {};
+  spawnTile();
+  spawnTile();
+}
+
+function spawnTile() {
+  const empty = [];
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 4; c++)
+      if (!grid[r][c]) empty.push([r, c]);
+  if (!empty.length) return;
+  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+  const value = Math.random() < 0.9 ? 2 : 4;
+  const id = ++tileId;
+  grid[r][c] = { id, value };
+  const el = createTileEl(id, r, c, value, true);
+  tiles[id] = { el, row: r, col: c, value };
+}
+
+function move(dir) {
+  if (moving) return;
+  // dir: 0=up, 1=right, 2=down, 3=left
+  let moved = false;
+  const mergedIds = [];
+  const removeLater = [];
+
+  // Process rows/cols in correct order
+  const range = [0, 1, 2, 3];
+  const rRange = (dir === 2) ? [3, 2, 1, 0] : [...range];
+  const cRange = (dir === 1) ? [3, 2, 1, 0] : [...range];
+
+  // newGrid
+  const newGrid = Array.from({ length: 4 }, () => Array(4).fill(null));
+  const merged = Array.from({ length: 4 }, () => Array(4).fill(false));
+
+  if (dir === 0 || dir === 2) {
+    // Process column by column
+    for (let c = 0; c < 4; c++) {
+      const rows = dir === 0 ? [0, 1, 2, 3] : [3, 2, 1, 0];
+      let writePos = rows[0];
+      const step = dir === 0 ? 1 : -1;
+      for (const r of rows) {
+        const cell = grid[r][c];
+        if (!cell) continue;
+        // Find target position
+        let target = writePos;
+        // Check if we can merge with the tile at target - step (the last placed tile)
+        const prevR = writePos - step;
+        if (prevR >= 0 && prevR < 4 && newGrid[prevR][c] && !merged[prevR][c] && newGrid[prevR][c].value === cell.value) {
+          // Merge
+          const oldId = newGrid[prevR][c].id;
+          const newValue = cell.value * 2;
+          newGrid[prevR][c] = { id: cell.id, value: newValue };
+          merged[prevR][c] = true;
+          score += newValue;
+          if (newValue === 2048) won = true;
+
+          // Move current tile to merge position, then remove old
+          tiles[cell.id].row = prevR;
+          tiles[cell.id].col = c;
+          tiles[cell.id].value = newValue;
+          applyTileStyle(tiles[cell.id].el, prevR, c, newValue);
+          tiles[cell.id].el.classList.add('merged');
+          mergedIds.push(cell.id);
+
+          // Old tile gets moved to same spot then removed
+          tiles[oldId].el.style.left = tileLeft(c) + '%';
+          tiles[oldId].el.style.top = tileTop(prevR) + '%';
+          removeLater.push(oldId);
+
+          if (r !== prevR) moved = true;
+        } else {
+          newGrid[writePos][c] = cell;
+          if (r !== writePos) {
+            moved = true;
+            tiles[cell.id].row = writePos;
+            tiles[cell.id].col = c;
+            applyTileStyle(tiles[cell.id].el, writePos, c, cell.value);
+          }
+          writePos += step;
+        }
+      }
+    }
+  } else {
+    // Left or Right - process row by row
+    for (let r = 0; r < 4; r++) {
+      const cols = dir === 3 ? [0, 1, 2, 3] : [3, 2, 1, 0];
+      let writePos = cols[0];
+      const step = dir === 3 ? 1 : -1;
+      for (const c of cols) {
+        const cell = grid[r][c];
+        if (!cell) continue;
+        const prevC = writePos - step;
+        if (prevC >= 0 && prevC < 4 && newGrid[r][prevC] && !merged[r][prevC] && newGrid[r][prevC].value === cell.value) {
+          const oldId = newGrid[r][prevC].id;
+          const newValue = cell.value * 2;
+          newGrid[r][prevC] = { id: cell.id, value: newValue };
+          merged[r][prevC] = true;
+          score += newValue;
+          if (newValue === 2048) won = true;
+
+          tiles[cell.id].row = r;
+          tiles[cell.id].col = prevC;
+          tiles[cell.id].value = newValue;
+          applyTileStyle(tiles[cell.id].el, r, prevC, newValue);
+          tiles[cell.id].el.classList.add('merged');
+          mergedIds.push(cell.id);
+
+          tiles[oldId].el.style.left = tileLeft(prevC) + '%';
+          tiles[oldId].el.style.top = tileTop(r) + '%';
+          removeLater.push(oldId);
+
+          if (c !== prevC) moved = true;
+        } else {
+          newGrid[r][writePos] = cell;
+          if (c !== writePos) {
+            moved = true;
+            tiles[cell.id].row = r;
+            tiles[cell.id].col = writePos;
+            applyTileStyle(tiles[cell.id].el, r, writePos, cell.value);
+          }
+          writePos += step;
+        }
+      }
+    }
+  }
+
+  if (!moved) return;
+
+  moving = true;
+  grid = newGrid;
+  scoreEl.textContent = score;
+
+  setTimeout(() => {
+    // Remove old merged tiles
+    for (const id of removeLater) {
+      if (tiles[id] && tiles[id].el.parentNode) {
+        tiles[id].el.remove();
+      }
+      delete tiles[id];
+    }
+    // Clean animation classes
+    for (const id of mergedIds) {
+      if (tiles[id]) tiles[id].el.classList.remove('merged');
+    }
+
+    spawnTile();
+    moving = false;
+
+    if (won && !winShown) {
+      winShown = true;
+      overlayWin.classList.add('active');
+    } else if (isGameOver()) {
+      overlayLose.classList.add('active');
+    }
+  }, 170);
+}
+
+function continueAfterWin() {
+  overlayWin.classList.remove('active');
+}
+
+function isGameOver() {
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 4; c++) {
+      if (!grid[r][c]) return false;
+      const v = grid[r][c].value;
+      if (c < 3 && grid[r][c + 1] && grid[r][c + 1].value === v) return false;
+      if (r < 3 && grid[r + 1][c] && grid[r + 1][c].value === v) return false;
+    }
+  return true;
+}
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  const map = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 };
+  if (map[e.key] !== undefined) {
+    e.preventDefault();
+    move(map[e.key]);
+  }
+});
+
+// Touch/swipe
+let touchStartX, touchStartY;
+const container = document.getElementById('grid-container');
+
+container.addEventListener('touchstart', (e) => {
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: true });
+
+container.addEventListener('touchend', (e) => {
+  if (touchStartX === undefined) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const threshold = 30;
+
+  if (Math.max(absDx, absDy) < threshold) return;
+
+  if (absDx > absDy) {
+    move(dx > 0 ? 1 : 3);
+  } else {
+    move(dy > 0 ? 2 : 0);
+  }
+  touchStartX = undefined;
+}, { passive: true });
+
+initGame();
+</script>
+</body>
+</html>

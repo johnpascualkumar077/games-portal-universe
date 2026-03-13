@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>スイングあそび</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #1a0a2e;
+  font-family: 'Hiragino Kaku Gothic Pro', 'Yu Gothic', sans-serif;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function() {
+"use strict";
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Colors
+const BG = '#1a0a2e';
+const PINK = '#ff6b9d';
+const CYAN = '#00e5ff';
+const YELLOW = '#ffe66d';
+const GREEN = '#7cff6b';
+const ORANGE = '#ffaa5c';
+const WHITE = '#ffffff';
+const PURPLE_LIGHT = '#8b5cf6';
+const ANCHOR_COLORS = [PINK, CYAN, YELLOW, GREEN, ORANGE, PURPLE_LIGHT];
+
+// Physics
+const GRAVITY = 0.35;
+const ROPE_STIFFNESS = 0.02;
+const DAMPING = 0.999;
+const PLAYER_RADIUS = 14;
+const ANCHOR_RADIUS = 12;
+const GRAPPLE_RANGE = 350;
+
+// Game state
+let state = 'menu'; // menu, playing, clear, gameover
+let currentStage = 0;
+let player, anchors, flag, camera, rope, particles;
+let inputDown = false;
+let bestAnchor = null;
+let groundY;
+let deathY;
+let stageStartX;
+
+// Stages: arrays of anchor positions {x, y} relative to stage start
+function generateStages() {
+  const stages = [];
+
+  // Stage 1: Easy - close anchors, gentle path
+  stages.push({
+    name: 'ステージ 1',
+    anchors: [
+      {x: 200, y: 180}, {x: 420, y: 140}, {x: 650, y: 170},
+      {x: 870, y: 130}, {x: 1100, y: 160}, {x: 1300, y: 120},
+      {x: 1500, y: 150}
+    ],
+    flagX: 1700,
+    startY: 400
+  });
+
+  // Stage 2: Medium spacing
+  stages.push({
+    name: 'ステージ 2',
+    anchors: [
+      {x: 250, y: 160}, {x: 520, y: 120}, {x: 800, y: 170},
+      {x: 1050, y: 100}, {x: 1350, y: 150}, {x: 1600, y: 110},
+      {x: 1900, y: 140}, {x: 2150, y: 100}
+    ],
+    flagX: 2350,
+    startY: 400
+  });
+
+  // Stage 3: Varying heights
+  stages.push({
+    name: 'ステージ 3',
+    anchors: [
+      {x: 280, y: 200}, {x: 550, y: 80}, {x: 830, y: 220},
+      {x: 1050, y: 90}, {x: 1350, y: 200}, {x: 1580, y: 70},
+      {x: 1850, y: 180}, {x: 2100, y: 100}, {x: 2400, y: 160}
+    ],
+    flagX: 2600,
+    startY: 400
+  });
+
+  // Stage 4: Wider gaps
+  stages.push({
+    name: 'ステージ 4',
+    anchors: [
+      {x: 300, y: 150}, {x: 650, y: 100}, {x: 1000, y: 180},
+      {x: 1300, y: 80}, {x: 1700, y: 160}, {x: 2050, y: 90},
+      {x: 2450, y: 150}, {x: 2800, y: 110}
+    ],
+    flagX: 3100,
+    startY: 400
+  });
+
+  // Stage 5: Expert - big gaps, tricky heights
+  stages.push({
+    name: 'ステージ 5',
+    anchors: [
+      {x: 320, y: 140}, {x: 720, y: 80}, {x: 1150, y: 200},
+      {x: 1500, y: 70}, {x: 1950, y: 190}, {x: 2300, y: 60},
+      {x: 2750, y: 170}, {x: 3100, y: 90}, {x: 3500, y: 150}
+    ],
+    flagX: 3800,
+    startY: 400
+  });
+
+  // Stage 6: Zigzag madness
+  stages.push({
+    name: 'ステージ 6',
+    anchors: [
+      {x: 280, y: 100}, {x: 600, y: 240}, {x: 900, y: 70},
+      {x: 1250, y: 230}, {x: 1550, y: 80}, {x: 1900, y: 220},
+      {x: 2200, y: 60}, {x: 2600, y: 210}, {x: 2900, y: 80},
+      {x: 3250, y: 190}
+    ],
+    flagX: 3500,
+    startY: 400
+  });
+
+  // Stage 7: The final challenge
+  stages.push({
+    name: 'ステージ 7',
+    anchors: [
+      {x: 350, y: 120}, {x: 800, y: 60}, {x: 1250, y: 220},
+      {x: 1600, y: 50}, {x: 2100, y: 200}, {x: 2500, y: 70},
+      {x: 3000, y: 210}, {x: 3400, y: 55}, {x: 3900, y: 180},
+      {x: 4300, y: 65}
+    ],
+    flagX: 4600,
+    startY: 400
+  });
+
+  return stages;
+}
+
+const STAGES = generateStages();
+
+// Particles
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 40 + Math.random() * 30,
+      maxLife: 40 + Math.random() * 30,
+      color,
+      r: 2 + Math.random() * 4
+    });
+  }
+}
+
+function initStage(stageIdx) {
+  const s = STAGES[stageIdx];
+  player = {
+    x: 80,
+    y: s.startY,
+    vx: 0,
+    vy: 0,
+    attached: false,
+    anchorIdx: -1,
+    ropeLen: 0
+  };
+  anchors = s.anchors.map((a, i) => ({
+    x: a.x, y: a.y,
+    color: ANCHOR_COLORS[i % ANCHOR_COLORS.length],
+    grabbed: false
+  }));
+  flag = { x: s.flagX, y: H - 80 };
+  camera = { x: 0 };
+  particles = [];
+  groundY = H - 40;
+  deathY = H + 200;
+  state = 'playing';
+  bestAnchor = null;
+}
+
+// Find nearest anchor within range and above player
+function findNearestAnchor() {
+  let best = null;
+  let bestDist = GRAPPLE_RANGE;
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const dx = a.x - player.x;
+    const dy = a.y - player.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist && a.y < player.y) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+
+// Input
+function onDown(e) {
+  e.preventDefault();
+  inputDown = true;
+  if (state === 'menu') {
+    initStage(currentStage);
+    return;
+  }
+  if (state === 'clear') {
+    currentStage++;
+    if (currentStage >= STAGES.length) currentStage = 0;
+    initStage(currentStage);
+    return;
+  }
+  if (state === 'gameover') {
+    initStage(currentStage);
+    return;
+  }
+  if (state === 'playing' && !player.attached) {
+    const idx = findNearestAnchor();
+    if (idx !== null) {
+      player.attached = true;
+      player.anchorIdx = idx;
+      anchors[idx].grabbed = true;
+      const dx = player.x - anchors[idx].x;
+      const dy = player.y - anchors[idx].y;
+      player.ropeLen = Math.sqrt(dx * dx + dy * dy);
+      spawnParticles(anchors[idx].x, anchors[idx].y, anchors[idx].color, 8);
+    }
+  }
+}
+
+function onUp(e) {
+  e.preventDefault();
+  inputDown = false;
+  if (state === 'playing' && player.attached) {
+    anchors[player.anchorIdx].grabbed = false;
+    player.attached = false;
+    player.anchorIdx = -1;
+    // Give a slight upward boost on release
+    player.vy -= 1;
+  }
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchend', onUp, { passive: false });
+canvas.addEventListener('touchcancel', onUp, { passive: false });
+
+// Physics update
+function update() {
+  if (state !== 'playing') return;
+
+  // Gravity
+  player.vy += GRAVITY;
+
+  if (player.attached) {
+    const a = anchors[player.anchorIdx];
+    const dx = player.x - a.x;
+    const dy = player.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > player.ropeLen) {
+      // Constrain to rope length (pendulum)
+      const angle = Math.atan2(dy, dx);
+      player.x = a.x + Math.cos(angle) * player.ropeLen;
+      player.y = a.y + Math.sin(angle) * player.ropeLen;
+
+      // Project velocity onto tangent
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const dot = player.vx * nx + player.vy * ny;
+      player.vx -= dot * nx;
+      player.vy -= dot * ny;
+    }
+
+    // Slight rope shortening for fun momentum
+    if (player.ropeLen > 50) {
+      player.ropeLen -= 0.3;
+    }
+  }
+
+  player.vx *= DAMPING;
+  player.vy *= DAMPING;
+
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Ground collision
+  if (player.y > groundY - PLAYER_RADIUS) {
+    player.y = groundY - PLAYER_RADIUS;
+    player.vy = -player.vy * 0.3;
+    player.vx *= 0.9;
+    if (Math.abs(player.vy) < 1) player.vy = 0;
+  }
+
+  // Death: fell below screen
+  if (player.y > deathY) {
+    state = 'gameover';
+    return;
+  }
+
+  // Camera follows player
+  const targetCamX = player.x - W * 0.3;
+  camera.x += (targetCamX - camera.x) * 0.08;
+  if (camera.x < 0) camera.x = 0;
+
+  // Check flag collision
+  const fx = flag.x - player.x;
+  const fy = flag.y - 30 - player.y;
+  if (Math.sqrt(fx * fx + fy * fy) < 40) {
+    state = 'clear';
+    spawnParticles(flag.x, flag.y - 30, YELLOW, 30);
+    spawnParticles(flag.x, flag.y - 30, PINK, 20);
+    spawnParticles(flag.x, flag.y - 30, CYAN, 20);
+  }
+
+  // Update best anchor indicator
+  if (!player.attached) {
+    bestAnchor = findNearestAnchor();
+  } else {
+    bestAnchor = null;
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Trail particles
+  if (Math.abs(player.vx) + Math.abs(player.vy) > 3) {
+    particles.push({
+      x: player.x, y: player.y,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      life: 15, maxLife: 15,
+      color: CYAN, r: 3
+    });
+  }
+}
+
+// Drawing
+function drawBackground() {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  const starSeed = 12345;
+  for (let i = 0; i < 80; i++) {
+    const sx = ((starSeed * (i + 1) * 7) % W + W) % W;
+    const sy = ((starSeed * (i + 1) * 13) % (H - 100) + H - 100) % (H - 100);
+    const blink = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() * 0.001 + i));
+    ctx.globalAlpha = blink * 0.6;
+    ctx.fillStyle = WHITE;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGround() {
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  // Ground
+  const grad = ctx.createLinearGradient(0, groundY, 0, H);
+  grad.addColorStop(0, '#2d1b69');
+  grad.addColorStop(1, '#1a0a2e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(camera.x - 10, groundY, W + 20, H - groundY);
+
+  // Ground line
+  ctx.strokeStyle = PURPLE_LIGHT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(camera.x - 10, groundY);
+  ctx.lineTo(camera.x + W + 10, groundY);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawAnchors() {
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const screenX = a.x - camera.x;
+    if (screenX < -50 || screenX > W + 50) continue;
+
+    // Glow
+    const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.003 + i);
+    ctx.globalAlpha = 0.3 * pulse;
+    ctx.fillStyle = a.color;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, ANCHOR_RADIUS * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight best anchor
+    if (bestAnchor === i && state === 'playing') {
+      ctx.globalAlpha = 0.4 + 0.3 * Math.sin(Date.now() * 0.008);
+      ctx.strokeStyle = WHITE;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, ANCHOR_RADIUS + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+
+    // Anchor body
+    ctx.fillStyle = a.grabbed ? WHITE : a.color;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, ANCHOR_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.arc(a.x - 3, a.y - 3, ANCHOR_RADIUS * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawRope() {
+  if (!player.attached) return;
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  const a = anchors[player.anchorIdx];
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(player.x, player.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  const px = player.x;
+  const py = player.y;
+
+  // Glow
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = CYAN;
+  ctx.beginPath();
+  ctx.arc(px, py, PLAYER_RADIUS * 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Body circle
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.arc(px, py, PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Face
+  ctx.fillStyle = '#1a0a2e';
+  // Eyes
+  ctx.beginPath();
+  ctx.arc(px - 4, py - 3, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(px + 4, py - 3, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Smile
+  ctx.strokeStyle = '#1a0a2e';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(px, py, 6, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  // Limbs (stickman style)
+  const angle = Math.atan2(player.vy, player.vx);
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+
+  // Legs
+  const legSpread = player.attached ? 0.4 : 0.25;
+  ctx.beginPath();
+  ctx.moveTo(px, py + PLAYER_RADIUS - 2);
+  ctx.lineTo(px - Math.cos(angle + 0.5) * 14 - legSpread * 10, py + PLAYER_RADIUS + 10);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px, py + PLAYER_RADIUS - 2);
+  ctx.lineTo(px - Math.cos(angle - 0.5) * 14 + legSpread * 10, py + PLAYER_RADIUS + 10);
+  ctx.stroke();
+
+  // Arms
+  if (player.attached) {
+    const a = anchors[player.anchorIdx];
+    const armAngle = Math.atan2(a.y - py, a.x - px);
+    ctx.beginPath();
+    ctx.moveTo(px, py - 2);
+    ctx.lineTo(px + Math.cos(armAngle) * 16, py + Math.sin(armAngle) * 16 - 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px, py - 2);
+    ctx.lineTo(px + Math.cos(armAngle + 0.3) * 14, py + Math.sin(armAngle + 0.3) * 14 - 2);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 2);
+    ctx.lineTo(px + Math.cos(angle - 0.8) * 14, py + Math.sin(angle - 0.8) * 14);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px, py - 2);
+    ctx.lineTo(px + Math.cos(angle + 0.8) * 14, py + Math.sin(angle + 0.8) * 14);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawFlag() {
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  const fx = flag.x;
+  const fy = groundY;
+
+  // Pole
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(fx, fy);
+  ctx.lineTo(fx, fy - 70);
+  ctx.stroke();
+
+  // Flag
+  const wave = Math.sin(Date.now() * 0.005) * 3;
+  ctx.fillStyle = YELLOW;
+  ctx.beginPath();
+  ctx.moveTo(fx, fy - 70);
+  ctx.lineTo(fx + 30 + wave, fy - 58);
+  ctx.lineTo(fx, fy - 45);
+  ctx.closePath();
+  ctx.fill();
+
+  // Star on flag
+  ctx.fillStyle = '#1a0a2e';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('★', fx + 13 + wave * 0.5, fy - 54);
+
+  // Glow at base
+  ctx.globalAlpha = 0.3 + 0.2 * Math.sin(Date.now() * 0.004);
+  ctx.fillStyle = YELLOW;
+  ctx.beginPath();
+  ctx.arc(fx, fy - 55, 25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawHUD() {
+  // Stage name
+  ctx.fillStyle = WHITE;
+  ctx.globalAlpha = 0.7;
+  ctx.font = 'bold 18px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(STAGES[currentStage].name, 16, 32);
+
+  // Progress bar
+  if (state === 'playing') {
+    const s = STAGES[currentStage];
+    const progress = Math.max(0, Math.min(1, player.x / s.flagX));
+    const barW = Math.min(180, W * 0.3);
+    const barH = 8;
+    const barX = 16;
+    const barY = 44;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4);
+    ctx.fill();
+
+    ctx.fillStyle = CYAN;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * progress, barH, 4);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+function drawMenu() {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 60; i++) {
+    const sx = ((54321 * (i + 1) * 7) % W);
+    const sy = ((54321 * (i + 1) * 13) % H);
+    const blink = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() * 0.001 + i * 2));
+    ctx.globalAlpha = blink * 0.5;
+    ctx.fillStyle = WHITE;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Title
+  const titleY = H * 0.3;
+  ctx.fillStyle = CYAN;
+  ctx.font = 'bold ' + Math.min(52, W * 0.09) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('スイングあそび', W / 2, titleY);
+
+  // Subtitle swing effect
+  const bob = Math.sin(Date.now() * 0.003) * 5;
+  ctx.fillStyle = YELLOW;
+  ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.fillText('ぶらぶらアクション！', W / 2, titleY + 45 + bob);
+
+  // Cute character preview
+  const cx = W / 2;
+  const cy = H * 0.52;
+  const swing = Math.sin(Date.now() * 0.004) * 20;
+
+  // Rope from top
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 80);
+  ctx.lineTo(cx + swing, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Anchor
+  ctx.fillStyle = PINK;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 80, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Character
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.arc(cx + swing, cy, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = BG;
+  ctx.beginPath();
+  ctx.arc(cx + swing - 4, cy - 3, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + swing + 4, cy - 3, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = BG;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx + swing, cy, 6, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  // Tap instruction
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.005);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = WHITE;
+  ctx.font = Math.min(22, W * 0.04) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.fillText('タップではじめる', W / 2, H * 0.75);
+  ctx.globalAlpha = 1;
+
+  // Stage indicator
+  ctx.fillStyle = GREEN;
+  ctx.font = 'bold ' + Math.min(18, W * 0.035) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.fillText(STAGES[currentStage].name, W / 2, H * 0.83);
+}
+
+function drawClearScreen() {
+  // Darken
+  ctx.fillStyle = 'rgba(26, 10, 46, 0.75)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Clear text
+  const bounce = Math.abs(Math.sin(Date.now() * 0.004)) * 10;
+  ctx.fillStyle = YELLOW;
+  ctx.font = 'bold ' + Math.min(56, W * 0.1) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('クリア！', W / 2, H * 0.38 - bounce);
+
+  // Stars
+  for (let i = 0; i < 3; i++) {
+    const sx = W / 2 - 60 + i * 60;
+    const sy = H * 0.46;
+    const delay = i * 0.3;
+    const scale = 0.8 + 0.2 * Math.sin(Date.now() * 0.005 + delay);
+    ctx.fillStyle = YELLOW;
+    ctx.font = (28 * scale) + 'px sans-serif';
+    ctx.fillText('★', sx, sy);
+  }
+
+  // Next stage
+  const nextText = currentStage < STAGES.length - 1 ? 'つぎのステージへ' : 'もういちどあそぶ';
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = WHITE;
+  ctx.font = Math.min(22, W * 0.04) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.fillText('タップで ' + nextText, W / 2, H * 0.62);
+  ctx.globalAlpha = 1;
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(26, 10, 46, 0.8)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = PINK;
+  ctx.font = 'bold ' + Math.min(44, W * 0.08) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('おちちゃった！', W / 2, H * 0.4);
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = WHITE;
+  ctx.font = Math.min(22, W * 0.04) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.fillText('タップで もういちどあそぶ', W / 2, H * 0.55);
+  ctx.globalAlpha = 1;
+}
+
+function drawPlayHint() {
+  if (state !== 'playing') return;
+  if (player.x > 150) return; // Only show at start
+
+  const pulse = 0.4 + 0.4 * Math.sin(Date.now() * 0.005);
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = WHITE;
+  ctx.font = Math.min(18, W * 0.035) + 'px "Hiragino Kaku Gothic Pro", "Yu Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('タップでつかまれ！', W / 2, H * 0.2);
+  ctx.globalAlpha = 1;
+}
+
+// Main loop
+function loop() {
+  resize();
+  update();
+
+  if (state === 'menu') {
+    drawMenu();
+  } else {
+    drawBackground();
+    drawGround();
+    drawFlag();
+    drawAnchors();
+    drawRope();
+    drawPlayer();
+    drawParticles();
+    drawHUD();
+    drawPlayHint();
+
+    if (state === 'clear') {
+      drawParticles();
+      drawClearScreen();
+    }
+    if (state === 'gameover') {
+      drawGameOver();
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+
+})();
+</script>
+</body>
+</html>

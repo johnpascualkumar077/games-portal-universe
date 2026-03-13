@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>テンプルラン</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #1a1040;
+    font-family: 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function() {
+  "use strict";
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  // --- Responsive sizing ---
+  let W, H, LANE_W, PATH_LEFT, PATH_RIGHT, PATH_W;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    PATH_W = Math.min(W * 0.7, 420);
+    PATH_LEFT = (W - PATH_W) / 2;
+    PATH_RIGHT = PATH_LEFT + PATH_W;
+    LANE_W = PATH_W;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- Game state ---
+  const STATE_MENU = 0, STATE_PLAY = 1, STATE_OVER = 2;
+  let state = STATE_MENU;
+  let player, obstacles, coins, particles;
+  let score, coinCount, distance, speed, speedTimer;
+  let lastTime, animFrame;
+  let moveDir = 0; // -1 left, 0 none, 1 right
+
+  const PLAYER_R = 16;
+  const PLAYER_SPEED = 280;
+  const BASE_SCROLL = 200;
+  const MAX_SCROLL = 600;
+  const SPEED_INCR = 8;
+  const OBS_MIN_GAP = 140;
+
+  // --- Obstacle types ---
+  const OBS_WALL = 0, OBS_FIRE = 1, OBS_PIT = 2;
+
+  function initGame() {
+    player = { x: W / 2, y: H * 0.75 };
+    obstacles = [];
+    coins = [];
+    particles = [];
+    score = 0;
+    coinCount = 0;
+    distance = 0;
+    speed = BASE_SCROLL;
+    speedTimer = 0;
+    lastTime = performance.now();
+    moveDir = 0;
+    // Pre-populate some obstacles and coins
+    for (let y = -100; y > -H * 2; y -= randRange(OBS_MIN_GAP, OBS_MIN_GAP + 100)) {
+      spawnRow(y);
+    }
+  }
+
+  function randRange(a, b) { return a + Math.random() * (b - a); }
+  function randInt(a, b) { return Math.floor(randRange(a, b + 1)); }
+
+  function spawnRow(y) {
+    const type = randInt(0, 2);
+    // Width varies by type
+    let w, h;
+    if (type === OBS_WALL) {
+      w = randRange(PATH_W * 0.25, PATH_W * 0.55);
+      h = randRange(18, 30);
+    } else if (type === OBS_FIRE) {
+      w = randRange(30, 60);
+      h = randRange(30, 60);
+    } else {
+      w = randRange(35, 65);
+      h = randRange(35, 65);
+    }
+    const x = randRange(PATH_LEFT + 10, PATH_RIGHT - w - 10);
+    obstacles.push({ x, y, w, h, type, timer: Math.random() * Math.PI * 2 });
+
+    // Coins near obstacle but in the gap
+    const coinChance = 0.7;
+    if (Math.random() < coinChance) {
+      // Place 1-3 coins in the passable area
+      const numCoins = randInt(1, 3);
+      for (let i = 0; i < numCoins; i++) {
+        let cx = randRange(PATH_LEFT + 20, PATH_RIGHT - 20);
+        // Make sure coin doesn't overlap obstacle too much
+        if (cx > x - 15 && cx < x + w + 15) {
+          cx = Math.random() < 0.5 ? PATH_LEFT + randRange(15, 40) : PATH_RIGHT - randRange(15, 40);
+        }
+        coins.push({ x: cx, y: y + randRange(-40, 40), r: 10, timer: Math.random() * Math.PI * 2, collected: false });
+      }
+    }
+  }
+
+  // --- Input handling ---
+  const keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ') e.preventDefault();
+    if (state === STATE_MENU && (e.key === ' ' || e.key === 'Enter')) startGame();
+    if (state === STATE_OVER && (e.key === ' ' || e.key === 'Enter')) startGame();
+  });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // Touch support
+  let touchStartX = null;
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (state === STATE_MENU || state === STATE_OVER) { startGame(); return; }
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    // Tap left/right halves
+    if (t.clientX < W / 2) moveDir = -1;
+    else moveDir = 1;
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (state !== STATE_PLAY || !touchStartX) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartX;
+    if (Math.abs(dx) > 15) {
+      moveDir = dx < 0 ? -1 : 1;
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    moveDir = 0;
+    touchStartX = null;
+  }, { passive: false });
+
+  // Mouse click for menu/retry
+  canvas.addEventListener('click', e => {
+    if (state === STATE_MENU) startGame();
+    else if (state === STATE_OVER) startGame();
+  });
+
+  function startGame() {
+    state = STATE_PLAY;
+    initGame();
+    if (!animFrame) loop(performance.now());
+  }
+
+  // --- Particles ---
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = randRange(40, 150);
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd,
+        life: randRange(0.3, 0.7),
+        maxLife: 0.7,
+        r: randRange(2, 5),
+        color
+      });
+    }
+  }
+
+  // --- Collision ---
+  function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+    const nearX = Math.max(rx, Math.min(cx, rx + rw));
+    const nearY = Math.max(ry, Math.min(cy, ry + rh));
+    const dx = cx - nearX, dy = cy - nearY;
+    return dx * dx + dy * dy < cr * cr;
+  }
+
+  // --- Update ---
+  function update(dt) {
+    if (state !== STATE_PLAY) return;
+
+    // Speed ramp
+    speedTimer += dt;
+    speed = Math.min(MAX_SCROLL, BASE_SCROLL + speedTimer * SPEED_INCR);
+
+    // Move direction from keyboard
+    if (keys['ArrowLeft']) moveDir = -1;
+    else if (keys['ArrowRight']) moveDir = 1;
+    else if (!touchStartX) moveDir = 0;
+
+    // Player movement
+    player.x += moveDir * PLAYER_SPEED * dt;
+    player.x = Math.max(PATH_LEFT + PLAYER_R + 4, Math.min(PATH_RIGHT - PLAYER_R - 4, player.x));
+
+    // Scroll everything down
+    const scrollAmt = speed * dt;
+    distance += scrollAmt;
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      obstacles[i].y += scrollAmt;
+      obstacles[i].timer += dt * 3;
+      if (obstacles[i].y > H + 100) obstacles.splice(i, 1);
+    }
+    for (let i = coins.length - 1; i >= 0; i--) {
+      coins[i].y += scrollAmt;
+      coins[i].timer += dt * 4;
+      if (coins[i].y > H + 100) coins.splice(i, 1);
+    }
+
+    // Spawn new obstacles at top
+    let topMostY = 0;
+    for (const o of obstacles) if (o.y < topMostY) topMostY = o.y;
+    while (topMostY > -H * 0.5) {
+      topMostY -= randRange(OBS_MIN_GAP, OBS_MIN_GAP + 80 + Math.random() * 40);
+      spawnRow(topMostY);
+    }
+
+    // Collision with obstacles
+    for (const o of obstacles) {
+      if (circleRect(player.x, player.y, PLAYER_R * 0.75, o.x, o.y, o.w, o.h)) {
+        gameOver();
+        return;
+      }
+    }
+
+    // Coin collection
+    for (const c of coins) {
+      if (c.collected) continue;
+      const dx = player.x - c.x, dy = player.y - c.y;
+      if (dx * dx + dy * dy < (PLAYER_R + c.r) * (PLAYER_R + c.r)) {
+        c.collected = true;
+        coinCount++;
+        spawnParticles(c.x, c.y, '#ffd700', 8);
+      }
+    }
+    coins = coins.filter(c => !c.collected || c.y <= H + 50);
+
+    // Score
+    score = Math.floor(distance / 10) + coinCount * 10;
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function gameOver() {
+    state = STATE_OVER;
+    spawnParticles(player.x, player.y, '#ff4444', 20);
+    spawnParticles(player.x, player.y, '#ffaa00', 15);
+  }
+
+  // --- Drawing ---
+  function draw() {
+    ctx.fillStyle = '#1a1040';
+    ctx.fillRect(0, 0, W, H);
+
+    if (state === STATE_MENU) {
+      drawMenu();
+      return;
+    }
+
+    drawPath();
+    drawObstacles();
+    drawCoins();
+    if (state === STATE_PLAY) drawPlayer();
+    drawParticles();
+    drawHUD();
+
+    if (state === STATE_OVER) drawGameOver();
+  }
+
+  function drawPath() {
+    // Main path
+    const grad = ctx.createLinearGradient(PATH_LEFT, 0, PATH_RIGHT, 0);
+    grad.addColorStop(0, '#2a2060');
+    grad.addColorStop(0.5, '#352878');
+    grad.addColorStop(1, '#2a2060');
+    ctx.fillStyle = grad;
+    ctx.fillRect(PATH_LEFT, 0, PATH_W, H);
+
+    // Path edges
+    ctx.strokeStyle = '#6648cc';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(PATH_LEFT, 0); ctx.lineTo(PATH_LEFT, H);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(PATH_RIGHT, 0); ctx.lineTo(PATH_RIGHT, H);
+    ctx.stroke();
+
+    // Dashed lane lines
+    ctx.setLineDash([20, 20]);
+    ctx.strokeStyle = 'rgba(100, 72, 204, 0.3)';
+    ctx.lineWidth = 1;
+    const offset = (distance * 0.5) % 40;
+    ctx.save();
+    ctx.translate(0, offset);
+    for (let x = 1; x <= 2; x++) {
+      const lx = PATH_LEFT + (PATH_W / 3) * x;
+      ctx.beginPath();
+      ctx.moveTo(lx, -40); ctx.lineTo(lx, H + 40);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.setLineDash([]);
+
+    // Side decorations (temple walls)
+    ctx.fillStyle = '#120c30';
+    ctx.fillRect(0, 0, PATH_LEFT, H);
+    ctx.fillRect(PATH_RIGHT, 0, W - PATH_RIGHT, H);
+
+    // Temple wall texture
+    const tileH = 50;
+    const tileOffset = (distance * 0.3) % tileH;
+    ctx.strokeStyle = 'rgba(60, 40, 120, 0.5)';
+    ctx.lineWidth = 1;
+    for (let y = -tileH + tileOffset; y < H + tileH; y += tileH) {
+      // Left wall bricks
+      ctx.strokeRect(PATH_LEFT - 40, y, 38, tileH - 2);
+      ctx.strokeRect(PATH_LEFT - 80, y + tileH / 2, 38, tileH - 2);
+      // Right wall bricks
+      ctx.strokeRect(PATH_RIGHT + 2, y, 38, tileH - 2);
+      ctx.strokeRect(PATH_RIGHT + 42, y + tileH / 2, 38, tileH - 2);
+    }
+  }
+
+  function drawObstacles() {
+    for (const o of obstacles) {
+      if (o.y > H + 50 || o.y + o.h < -50) continue;
+
+      if (o.type === OBS_WALL) {
+        // Gray stone wall
+        ctx.fillStyle = '#5a5a6e';
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        ctx.fillStyle = '#4a4a5e';
+        ctx.fillRect(o.x + 2, o.y + 2, o.w - 4, o.h - 4);
+        // Brick lines
+        ctx.strokeStyle = '#3a3a4e';
+        ctx.lineWidth = 1;
+        const mid = o.x + o.w / 2;
+        ctx.beginPath();
+        ctx.moveTo(mid, o.y); ctx.lineTo(mid, o.y + o.h);
+        ctx.stroke();
+        ctx.strokeStyle = '#6e6e82';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+      } else if (o.type === OBS_FIRE) {
+        // Fire trap - animated
+        const pulse = Math.sin(o.timer) * 0.2 + 0.8;
+        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+        const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, o.w * 0.6 * pulse);
+        gr.addColorStop(0, '#ffee44');
+        gr.addColorStop(0.4, '#ff6600');
+        gr.addColorStop(0.8, '#cc2200');
+        gr.addColorStop(1, 'rgba(100,0,0,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, o.w * 0.6 * pulse, o.h * 0.6 * pulse, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner flame
+        const gr2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, o.w * 0.3);
+        gr2.addColorStop(0, '#ffffff');
+        gr2.addColorStop(0.5, '#ffcc00');
+        gr2.addColorStop(1, 'rgba(255,100,0,0)');
+        ctx.fillStyle = gr2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, o.w * 0.25, o.h * 0.25, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Pit - dark hole
+        const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+        const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, o.w * 0.6);
+        gr.addColorStop(0, '#000000');
+        gr.addColorStop(0.6, '#0a0520');
+        gr.addColorStop(0.85, '#1a1050');
+        gr.addColorStop(1, 'rgba(26,16,64,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, o.w * 0.6, o.h * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Edge ring
+        ctx.strokeStyle = '#3a2a6a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, o.w * 0.55, o.h * 0.55, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawCoins() {
+    for (const c of coins) {
+      if (c.collected || c.y > H + 30 || c.y < -30) continue;
+      const sparkle = Math.sin(c.timer) * 0.15 + 0.85;
+      const r = c.r * sparkle;
+      // Glow
+      const gr = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r * 2.5);
+      gr.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+      gr.addColorStop(1, 'rgba(255, 215, 0, 0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Coin body
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffec6e';
+      ctx.beginPath();
+      ctx.arc(c.x - r * 0.2, c.y - r * 0.2, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Sparkle cross
+      if (Math.sin(c.timer * 1.5) > 0.5) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        const sp = r * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(c.x - sp, c.y); ctx.lineTo(c.x + sp, c.y);
+        ctx.moveTo(c.x, c.y - sp); ctx.lineTo(c.x, c.y + sp);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawPlayer() {
+    const px = player.x, py = player.y;
+    const r = PLAYER_R;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(px + 3, py + 5, r * 1.1, r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    const bodyGrad = ctx.createRadialGradient(px - 4, py - 4, 0, px, py, r);
+    bodyGrad.addColorStop(0, '#66ddff');
+    bodyGrad.addColorStop(1, '#2299cc');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outline
+    ctx.strokeStyle = '#1a7799';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Eyes
+    const eyeOff = moveDir * 2;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(px - 5 + eyeOff, py - 3, 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(px + 5 + eyeOff, py - 3, 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Pupils
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(px - 4 + eyeOff * 1.2, py - 3, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px + 6 + eyeOff * 1.2, py - 3, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth - small smile
+    ctx.strokeStyle = '#1a5566';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px + eyeOff * 0.5, py + 4, 4, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const alpha = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHUD() {
+    // Score panel
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    roundRect(10, 10, 170, 60, 10);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('スコア: ' + score, 22, 34);
+
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('コイン: ' + coinCount, 22, 58);
+
+    // Speed indicator
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    roundRect(W - 110, 10, 100, 32, 8);
+    ctx.fill();
+    ctx.fillStyle = '#aaf';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('はやさ: ' + Math.floor(speed), W - 60, 31);
+    ctx.textAlign = 'left';
+  }
+
+  function drawMenu() {
+    // Background effect
+    drawPath();
+
+    // Overlay
+    ctx.fillStyle = 'rgba(10, 5, 30, 0.7)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Title
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffcc44';
+    ctx.font = 'bold ' + Math.min(48, W * 0.1) + 'px sans-serif';
+    ctx.fillText('テンプルラン', W / 2, H * 0.3);
+
+    ctx.fillStyle = '#aaccff';
+    ctx.font = Math.min(20, W * 0.045) + 'px sans-serif';
+    ctx.fillText('しんでんからにげろ！', W / 2, H * 0.38);
+
+    // Instructions
+    ctx.fillStyle = '#ddd';
+    ctx.font = Math.min(16, W * 0.035) + 'px sans-serif';
+    ctx.fillText('← → キーでいどう', W / 2, H * 0.50);
+    ctx.fillText('コインをあつめてスコアをかせごう', W / 2, H * 0.56);
+
+    // Start prompt
+    const pulse = Math.sin(performance.now() / 400) * 0.3 + 0.7;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#66ffaa';
+    ctx.font = 'bold ' + Math.min(24, W * 0.055) + 'px sans-serif';
+    ctx.fillText('タップ / スペースキーではじめる', W / 2, H * 0.7);
+    ctx.globalAlpha = 1;
+
+    // Player preview
+    const prevX = W / 2, prevY = H * 0.85;
+    const pr = 24;
+    const bodyGrad = ctx.createRadialGradient(prevX - 4, prevY - 4, 0, prevX, prevY, pr);
+    bodyGrad.addColorStop(0, '#66ddff');
+    bodyGrad.addColorStop(1, '#2299cc');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.arc(prevX, prevY, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1a7799';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(prevX - 7, prevY - 4, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(prevX + 7, prevY - 4, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.beginPath(); ctx.arc(prevX - 6, prevY - 4, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(prevX + 8, prevY - 4, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#1a5566';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(prevX, prevY + 5, 5, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = 'rgba(10, 5, 30, 0.75)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+
+    // Game over text
+    ctx.fillStyle = '#ff5555';
+    ctx.font = 'bold ' + Math.min(44, W * 0.09) + 'px sans-serif';
+    ctx.fillText('ゲームオーバー', W / 2, H * 0.32);
+
+    // Results panel
+    ctx.fillStyle = 'rgba(30, 20, 60, 0.8)';
+    roundRect(W / 2 - 130, H * 0.38, 260, 110, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#6648cc';
+    ctx.lineWidth = 2;
+    roundRect(W / 2 - 130, H * 0.38, 260, 110, 14);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(22, W * 0.05) + 'px sans-serif';
+    ctx.fillText('スコア: ' + score, W / 2, H * 0.38 + 38);
+
+    ctx.fillStyle = '#ffd700';
+    ctx.font = Math.min(18, W * 0.04) + 'px sans-serif';
+    ctx.fillText('コイン: ' + coinCount + 'まい', W / 2, H * 0.38 + 68);
+
+    ctx.fillStyle = '#aaf';
+    ctx.font = Math.min(15, W * 0.035) + 'px sans-serif';
+    ctx.fillText('きょり: ' + Math.floor(distance / 10) + 'm', W / 2, H * 0.38 + 94);
+
+    // Retry button
+    const pulse = Math.sin(performance.now() / 350) * 0.3 + 0.7;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#66ffaa';
+    ctx.font = 'bold ' + Math.min(26, W * 0.06) + 'px sans-serif';
+    ctx.fillText('もういちどあそぶ', W / 2, H * 0.72);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = '#aaa';
+    ctx.font = Math.min(14, W * 0.032) + 'px sans-serif';
+    ctx.fillText('タップ / スペースキー', W / 2, H * 0.78);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // --- Main loop ---
+  function loop(now) {
+    animFrame = requestAnimationFrame(loop);
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    resize(); // keep responsive
+    update(dt);
+    draw();
+  }
+
+  // Start with menu
+  lastTime = performance.now();
+  loop(lastTime);
+})();
+</script>
+</body>
+</html>

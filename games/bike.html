@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>バイクレース！</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; }
+#overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(20, 20, 40, 0.85); color: #fff; font-family: sans-serif;
+  z-index: 10; pointer-events: auto;
+}
+#overlay.hidden { display: none; pointer-events: none; }
+#overlay h1 { font-size: clamp(28px, 6vw, 56px); color: #ff9f43; margin-bottom: 10px; }
+#overlay h2 { font-size: clamp(20px, 4vw, 40px); color: #54a0ff; margin-bottom: 8px; }
+#overlay p { font-size: clamp(14px, 3vw, 24px); color: #feca57; margin-bottom: 20px; text-align: center; line-height: 1.6; }
+#overlay button {
+  font-size: clamp(18px, 4vw, 32px); padding: 12px 40px; border: none; border-radius: 12px;
+  background: #ff6b6b; color: #fff; cursor: pointer; font-weight: bold;
+  margin: 6px; transition: transform 0.1s;
+}
+#overlay button:hover { transform: scale(1.05); }
+#overlay button:active { transform: scale(0.95); }
+.btn-green { background: #1dd1a1 !important; }
+.controls-hint { font-size: clamp(11px, 2.2vw, 18px) !important; color: #c8d6e5 !important; }
+</style>
+</head>
+<body>
+<canvas id="gc"></canvas>
+<div id="overlay">
+  <h1>バイクレース！</h1>
+  <h2>もとくろす さいこう！</h2>
+  <p>↑ すすむ ／ ←→ かたむける<br><span class="controls-hint">タッチ：ひだり＝うしろ　みぎ＝まえ　りょうほう＝ブースト</span></p>
+  <button onclick="startGame()">あそぶ！</button>
+</div>
+<script>
+const canvas = document.getElementById('gc');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Constants ---
+const GRAVITY = 0.45;
+const WHEEL_R = 16;
+const BIKE_W = 50;
+const BIKE_H = 14;
+const AXLE_DIST = 48;
+const MAX_SPEED = 7;
+const ACCEL = 0.18;
+const TILT_SPEED = 0.04;
+const FRICTION = 0.985;
+const BOUNCE = 0.3;
+const AIR_DRAG = 0.998;
+
+// --- Stage Definitions ---
+const stages = [];
+
+function buildTerrain(segments) {
+  const pts = [];
+  let x = 0, y = 0;
+  for (const seg of segments) {
+    const [type, ...args] = seg;
+    if (type === 'flat') {
+      const [len, baseY] = args;
+      if (pts.length === 0) y = baseY || H * 0.7;
+      for (let i = 0; i <= len; i += 20) { pts.push({ x: x + i, y }); }
+      x += len;
+    } else if (type === 'slope') {
+      const [len, dy] = args;
+      const startY = y;
+      for (let i = 0; i <= len; i += 15) {
+        const t = i / len;
+        pts.push({ x: x + i, y: startY + dy * t });
+      }
+      x += len; y += dy;
+    } else if (type === 'hill') {
+      const [len, height] = args;
+      for (let i = 0; i <= len; i += 12) {
+        const t = i / len;
+        pts.push({ x: x + i, y: y - Math.sin(t * Math.PI) * height });
+      }
+      x += len;
+    } else if (type === 'gap') {
+      const [len, depth] = args;
+      pts.push({ x, y });
+      pts.push({ x: x + 5, y });
+      pts.push({ x: x + 10, y: y + depth });
+      pts.push({ x: x + len - 10, y: y + depth });
+      pts.push({ x: x + len - 5, y });
+      pts.push({ x: x + len, y });
+      x += len;
+    } else if (type === 'ramp') {
+      const [len, height] = args;
+      const startY = y;
+      for (let i = 0; i <= len; i += 10) {
+        const t = i / len;
+        pts.push({ x: x + i, y: startY - height * t });
+      }
+      x += len; y -= height;
+    } else if (type === 'drop') {
+      const [len, depth] = args;
+      pts.push({ x, y });
+      pts.push({ x: x + len * 0.3, y });
+      pts.push({ x: x + len * 0.5, y: y + depth });
+      pts.push({ x: x + len, y: y + depth });
+      x += len; y += depth;
+    } else if (type === 'wave') {
+      const [len, amp, freq] = args;
+      for (let i = 0; i <= len; i += 10) {
+        pts.push({ x: x + i, y: y - Math.sin((i / len) * Math.PI * freq) * amp });
+      }
+      x += len;
+    }
+  }
+  return pts;
+}
+
+function buildStages() {
+  stages.length = 0;
+  const bY = H * 0.68;
+
+  // Stage 1 - easy
+  stages.push({
+    name: 'ステージ１',
+    terrain: buildTerrain([
+      ['flat', 300, bY], ['hill', 200, 60], ['flat', 200],
+      ['slope', 150, -50], ['flat', 100], ['hill', 150, 40],
+      ['flat', 200], ['ramp', 100, 40], ['drop', 80, 40],
+      ['flat', 300], ['hill', 180, 50], ['flat', 400]
+    ]),
+    obstacles: [],
+    bg: '#16213e'
+  });
+
+  // Stage 2 - medium
+  stages.push({
+    name: 'ステージ２',
+    terrain: buildTerrain([
+      ['flat', 250, bY], ['ramp', 120, 70], ['drop', 100, 70],
+      ['flat', 100], ['gap', 120, 200], ['flat', 150],
+      ['wave', 400, 40, 3], ['flat', 100],
+      ['ramp', 80, 60], ['flat', 30], ['drop', 80, 60],
+      ['flat', 150], ['hill', 250, 80], ['flat', 100],
+      ['gap', 100, 180], ['flat', 400]
+    ]),
+    obstacles: [],
+    bg: '#1a1a2e'
+  });
+
+  // Stage 3 - hard
+  stages.push({
+    name: 'ステージ３',
+    terrain: buildTerrain([
+      ['flat', 200, bY], ['ramp', 100, 90], ['gap', 160, 250],
+      ['flat', 80], ['wave', 300, 50, 4],
+      ['ramp', 60, 50], ['drop', 120, 100],
+      ['flat', 80], ['gap', 130, 220], ['flat', 80],
+      ['hill', 200, 100], ['slope', 100, 60],
+      ['flat', 60], ['ramp', 80, 70], ['gap', 140, 200],
+      ['flat', 100], ['wave', 250, 35, 5], ['flat', 400]
+    ]),
+    obstacles: [],
+    bg: '#0a3d62'
+  });
+
+  // Stage 4 - expert
+  stages.push({
+    name: 'ステージ４',
+    terrain: buildTerrain([
+      ['flat', 180, bY], ['ramp', 80, 100],
+      ['gap', 180, 300], ['ramp', 60, 40],
+      ['drop', 60, 80], ['flat', 60],
+      ['wave', 350, 60, 5], ['gap', 110, 200],
+      ['flat', 60], ['ramp', 100, 120],
+      ['drop', 150, 160], ['flat', 60],
+      ['hill', 150, 90], ['gap', 150, 250],
+      ['flat', 80], ['wave', 200, 45, 4],
+      ['ramp', 70, 80], ['gap', 130, 220], ['flat', 500]
+    ]),
+    obstacles: [],
+    bg: '#1B1464'
+  });
+}
+
+// --- Game State ---
+let currentStage = 0;
+let bike, cam, terrain, flagX, gameState, timer, bestTimes;
+let keys = {};
+let touchL = false, touchR = false;
+
+function initBike() {
+  const startY = stages[currentStage].terrain[0].y;
+  bike = {
+    x: 100, y: startY - WHEEL_R - 5,
+    vx: 0, vy: 0,
+    angle: 0, angVel: 0,
+    grounded: false, alive: true,
+    wheelFront: { x: 0, y: 0 }, wheelBack: { x: 0, y: 0 }
+  };
+  cam = { x: 0, y: 0 };
+  timer = 0;
+  gameState = 'playing';
+}
+
+function initStage() {
+  terrain = stages[currentStage].terrain;
+  flagX = terrain[terrain.length - 1].x - 80;
+  initBike();
+}
+
+bestTimes = [];
+
+// --- Terrain Helpers ---
+function getTerrainY(px) {
+  for (let i = 0; i < terrain.length - 1; i++) {
+    const a = terrain[i], b = terrain[i + 1];
+    if (px >= a.x && px <= b.x) {
+      const t = (px - a.x) / (b.x - a.x);
+      return a.y + (b.y - a.y) * t;
+    }
+  }
+  return terrain[terrain.length - 1].y;
+}
+
+function getTerrainNormal(px) {
+  for (let i = 0; i < terrain.length - 1; i++) {
+    const a = terrain[i], b = terrain[i + 1];
+    if (px >= a.x && px <= b.x) {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      return { nx: -dy / len, ny: dx / len, angle: Math.atan2(dy, dx) };
+    }
+  }
+  return { nx: 0, ny: -1, angle: 0 };
+}
+
+// --- Physics ---
+function updateBike(dt) {
+  if (!bike.alive) return;
+
+  const accelerating = keys['ArrowUp'] || keys['KeyW'] || (touchL && touchR);
+  const tiltLeft = keys['ArrowLeft'] || keys['KeyA'] || touchL;
+  const tiltRight = keys['ArrowRight'] || keys['KeyD'] || touchR;
+
+  // Gravity
+  bike.vy += GRAVITY;
+
+  // Throttle
+  if (accelerating && bike.grounded) {
+    const n = getTerrainNormal(bike.x);
+    bike.vx += Math.cos(n.angle) * ACCEL * 3;
+    bike.vy += Math.sin(n.angle) * ACCEL * 3;
+  } else if (accelerating) {
+    bike.vx += 0.12;
+  }
+
+  // Tilt
+  if (tiltLeft && !tiltRight) bike.angVel -= TILT_SPEED;
+  if (tiltRight && !tiltLeft) bike.angVel += TILT_SPEED;
+
+  // Air drag on rotation
+  bike.angVel *= 0.95;
+  bike.angle += bike.angVel;
+
+  // Move
+  bike.x += bike.vx;
+  bike.y += bike.vy;
+
+  // Speed cap
+  const speed = Math.sqrt(bike.vx * bike.vx + bike.vy * bike.vy);
+  if (speed > MAX_SPEED) {
+    bike.vx = (bike.vx / speed) * MAX_SPEED;
+    bike.vy = (bike.vy / speed) * MAX_SPEED;
+  }
+
+  // Friction / drag
+  if (bike.grounded) {
+    bike.vx *= FRICTION;
+  } else {
+    bike.vx *= AIR_DRAG;
+  }
+
+  // Wheel positions
+  const cosA = Math.cos(bike.angle), sinA = Math.sin(bike.angle);
+  const halfAxle = AXLE_DIST / 2;
+  bike.wheelBack = { x: bike.x - cosA * halfAxle, y: bike.y - sinA * halfAxle + 0 };
+  bike.wheelFront = { x: bike.x + cosA * halfAxle, y: bike.y + sinA * halfAxle + 0 };
+
+  // Ground collision
+  bike.grounded = false;
+  for (const wheel of [bike.wheelBack, bike.wheelFront]) {
+    const gy = getTerrainY(wheel.x);
+    if (wheel.y + WHEEL_R > gy) {
+      const pen = (wheel.y + WHEEL_R) - gy;
+      bike.y -= pen * 0.8;
+      const n = getTerrainNormal(wheel.x);
+
+      // Reflect velocity
+      const dot = bike.vx * n.nx + bike.vy * n.ny;
+      if (dot < 0) {
+        bike.vy -= n.ny * dot * (1 + BOUNCE);
+        bike.vx -= n.nx * dot * BOUNCE * 0.3;
+      }
+      bike.vy = Math.min(bike.vy, 0);
+
+      // Align to terrain
+      const terrAngle = n.angle;
+      const angleDiff = terrAngle - bike.angle;
+      bike.angle += angleDiff * 0.15;
+      bike.angVel *= 0.8;
+
+      bike.grounded = true;
+    }
+  }
+
+  // Crash detection: too much tilt
+  if (Math.abs(bike.angle) > Math.PI * 0.6) {
+    bike.alive = false;
+    gameState = 'crashed';
+  }
+
+  // Fall off screen
+  if (bike.y > H + 300) {
+    bike.alive = false;
+    gameState = 'crashed';
+  }
+
+  // Head hit (upside down ground contact)
+  const headY = bike.y - Math.cos(bike.angle) * 30;
+  const headX = bike.x - Math.sin(bike.angle) * 10;
+  if (headY + 5 > getTerrainY(headX) && Math.abs(bike.angle) > 0.8) {
+    bike.alive = false;
+    gameState = 'crashed';
+  }
+
+  // Win check
+  if (bike.x >= flagX) {
+    gameState = 'clear';
+    if (!bestTimes[currentStage] || timer < bestTimes[currentStage]) {
+      bestTimes[currentStage] = timer;
+    }
+  }
+
+  timer += 1 / 60;
+}
+
+// --- Camera ---
+function updateCamera() {
+  const tx = bike.x - W * 0.3;
+  const ty = bike.y - H * 0.5;
+  cam.x += (tx - cam.x) * 0.08;
+  cam.y += (ty - cam.y) * 0.06;
+}
+
+// --- Drawing ---
+function drawBackground(stage) {
+  ctx.fillStyle = stage.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Parallax mountains
+  const cols = ['#2d3436', '#353b48', '#2f3640'];
+  for (let layer = 0; layer < 3; layer++) {
+    ctx.fillStyle = cols[layer];
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 40) {
+      const scrollX = cam.x * (0.05 + layer * 0.03);
+      const yy = H * 0.45 + Math.sin((x + scrollX + layer * 500) * 0.003) * (60 + layer * 30)
+        + Math.sin((x + scrollX) * 0.007 + layer) * 30;
+      ctx.lineTo(x, yy);
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawTerrain() {
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+
+  // Terrain fill
+  ctx.beginPath();
+  ctx.moveTo(terrain[0].x, terrain[0].y + 500);
+  for (const p of terrain) ctx.lineTo(p.x, p.y);
+  ctx.lineTo(terrain[terrain.length - 1].x, terrain[terrain.length - 1].y + 500);
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(0, H * 0.3, 0, H + 200);
+  grad.addColorStop(0, '#2ecc71');
+  grad.addColorStop(0.3, '#27ae60');
+  grad.addColorStop(1, '#1a5c32');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Terrain surface line
+  ctx.beginPath();
+  for (let i = 0; i < terrain.length; i++) {
+    if (i === 0) ctx.moveTo(terrain[i].x, terrain[i].y);
+    else ctx.lineTo(terrain[i].x, terrain[i].y);
+  }
+  ctx.strokeStyle = '#55efc4';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Flag
+  const fy = getTerrainY(flagX);
+  ctx.fillStyle = '#feca57';
+  ctx.fillRect(flagX, fy - 80, 4, 80);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.beginPath();
+  ctx.moveTo(flagX + 4, fy - 80);
+  ctx.lineTo(flagX + 44, fy - 65);
+  ctx.lineTo(flagX + 4, fy - 50);
+  ctx.closePath();
+  ctx.fill();
+
+  // "ゴール" text
+  ctx.fillStyle = '#feca57';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('ゴール', flagX + 20, fy - 90);
+
+  ctx.restore();
+}
+
+function drawBike() {
+  if (!bike.alive && gameState === 'crashed') return;
+
+  ctx.save();
+  ctx.translate(bike.x - cam.x, bike.y - cam.y);
+  ctx.rotate(bike.angle);
+
+  const halfAxle = AXLE_DIST / 2;
+
+  // Suspension lines
+  ctx.strokeStyle = '#636e72';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-halfAxle, 0);
+  ctx.lineTo(-halfAxle * 0.3, -18);
+  ctx.lineTo(halfAxle * 0.3, -18);
+  ctx.lineTo(halfAxle, 0);
+  ctx.stroke();
+
+  // Body frame
+  ctx.fillStyle = '#ff9f43';
+  ctx.beginPath();
+  ctx.moveTo(-halfAxle * 0.5, -8);
+  ctx.lineTo(halfAxle * 0.5, -8);
+  ctx.lineTo(halfAxle * 0.4, -22);
+  ctx.lineTo(-halfAxle * 0.2, -22);
+  ctx.closePath();
+  ctx.fill();
+
+  // Seat
+  ctx.fillStyle = '#2d3436';
+  ctx.fillRect(-10, -26, 18, 5);
+
+  // Handlebars
+  ctx.strokeStyle = '#dfe6e9';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(halfAxle * 0.4, -22);
+  ctx.lineTo(halfAxle * 0.6, -30);
+  ctx.stroke();
+
+  // Engine block
+  ctx.fillStyle = '#636e72';
+  ctx.fillRect(-8, -8, 16, 10);
+
+  // Exhaust
+  ctx.strokeStyle = '#b2bec3';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-12, 0);
+  ctx.lineTo(-halfAxle * 0.9, 4);
+  ctx.stroke();
+
+  // Rider (simple stick figure)
+  ctx.fillStyle = '#0984e3';
+  // Body
+  ctx.fillRect(-3, -42, 6, 18);
+  // Head
+  ctx.beginPath();
+  ctx.arc(0, -48, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffeaa7';
+  ctx.fill();
+  ctx.strokeStyle = '#fdcb6e';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Helmet
+  ctx.fillStyle = '#e17055';
+  ctx.beginPath();
+  ctx.arc(0, -50, 7, Math.PI, 0);
+  ctx.fill();
+
+  // Arms
+  ctx.strokeStyle = '#0984e3';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -36);
+  ctx.lineTo(halfAxle * 0.55, -28);
+  ctx.stroke();
+
+  // Legs
+  ctx.beginPath();
+  ctx.moveTo(-2, -24);
+  ctx.lineTo(-halfAxle * 0.3, -8);
+  ctx.moveTo(2, -24);
+  ctx.lineTo(halfAxle * 0.2, -6);
+  ctx.stroke();
+
+  // Back wheel
+  ctx.beginPath();
+  ctx.arc(-halfAxle, 0, WHEEL_R, 0, Math.PI * 2);
+  ctx.fillStyle = '#2d3436';
+  ctx.fill();
+  ctx.strokeStyle = '#636e72';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // Wheel detail
+  ctx.beginPath();
+  ctx.arc(-halfAxle, 0, WHEEL_R - 4, 0, Math.PI * 2);
+  ctx.strokeStyle = '#b2bec3';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Hub
+  ctx.beginPath();
+  ctx.arc(-halfAxle, 0, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#dfe6e9';
+  ctx.fill();
+
+  // Front wheel
+  ctx.beginPath();
+  ctx.arc(halfAxle, 0, WHEEL_R, 0, Math.PI * 2);
+  ctx.fillStyle = '#2d3436';
+  ctx.fill();
+  ctx.strokeStyle = '#636e72';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(halfAxle, 0, WHEEL_R - 4, 0, Math.PI * 2);
+  ctx.strokeStyle = '#b2bec3';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(halfAxle, 0, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#dfe6e9';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  // Stage name
+  ctx.fillStyle = '#ff9f43';
+  ctx.font = 'bold ' + Math.max(18, W * 0.028) + 'px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(stages[currentStage].name, 16, 36);
+
+  // Timer
+  ctx.fillStyle = '#feca57';
+  ctx.font = Math.max(16, W * 0.024) + 'px sans-serif';
+  ctx.fillText('じかん: ' + timer.toFixed(1) + 'びょう', 16, 64);
+
+  // Speed
+  const speed = Math.sqrt(bike.vx * bike.vx + bike.vy * bike.vy);
+  ctx.fillStyle = '#54a0ff';
+  ctx.fillText('はやさ: ' + (speed * 10).toFixed(0), 16, 90);
+
+  // Progress bar
+  const progress = Math.min(1, bike.x / flagX);
+  const barW = Math.min(200, W * 0.3);
+  ctx.fillStyle = '#2d3436';
+  ctx.fillRect(W - barW - 20, 16, barW, 14);
+  ctx.fillStyle = '#1dd1a1';
+  ctx.fillRect(W - barW - 20, 16, barW * progress, 14);
+  ctx.strokeStyle = '#55efc4';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W - barW - 20, 16, barW, 14);
+  ctx.fillStyle = '#fff';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText((progress * 100).toFixed(0) + '%', W - 24, 28);
+
+  // Touch hint
+  if ('ontouchstart' in window) {
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = Math.max(12, W * 0.025) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('← うしろ', W * 0.25, H - 30);
+    ctx.fillText('まえ →', W * 0.75, H - 30);
+  }
+
+  // Controls reminder (keyboard)
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('↑すすむ ←→かたむける', 16, H - 14);
+}
+
+function drawCrashScreen() {
+  ctx.fillStyle = 'rgba(180, 30, 30, 0.4)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Explosion effect
+  ctx.save();
+  ctx.translate(bike.x - cam.x, bike.y - cam.y);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + timer * 3;
+    const r = 20 + Math.sin(timer * 10 + i) * 15;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 5, 0, Math.PI * 2);
+    ctx.fillStyle = i % 2 === 0 ? '#ff6b6b' : '#feca57';
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = '#ff6b6b';
+  ctx.font = 'bold ' + Math.max(28, W * 0.06) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('クラッシュ！', W / 2, H / 2 - 20);
+  ctx.fillStyle = '#feca57';
+  ctx.font = Math.max(18, W * 0.035) + 'px sans-serif';
+  ctx.fillText('タップ か スペース で もういちど', W / 2, H / 2 + 25);
+}
+
+function drawClearScreen() {
+  ctx.fillStyle = 'rgba(20, 100, 50, 0.5)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let i = 0; i < 20; i++) {
+    const sx = W * 0.2 + Math.sin(timer * 2 + i * 1.3) * W * 0.3;
+    const sy = H * 0.2 + Math.cos(timer * 1.5 + i * 0.9) * H * 0.2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3 + Math.sin(timer * 5 + i) * 2, 0, Math.PI * 2);
+    ctx.fillStyle = ['#feca57', '#ff9f43', '#55efc4', '#54a0ff'][i % 4];
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#1dd1a1';
+  ctx.font = 'bold ' + Math.max(32, W * 0.07) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('クリア！', W / 2, H / 2 - 40);
+
+  ctx.fillStyle = '#feca57';
+  ctx.font = Math.max(18, W * 0.035) + 'px sans-serif';
+  ctx.fillText('タイム: ' + timer.toFixed(1) + 'びょう', W / 2, H / 2 + 5);
+
+  if (currentStage < stages.length - 1) {
+    ctx.fillStyle = '#54a0ff';
+    ctx.font = Math.max(16, W * 0.03) + 'px sans-serif';
+    ctx.fillText('タップ か スペース で つぎのステージ', W / 2, H / 2 + 45);
+  } else {
+    ctx.fillStyle = '#ff9f43';
+    ctx.font = 'bold ' + Math.max(22, W * 0.04) + 'px sans-serif';
+    ctx.fillText('ぜんぶクリア！おめでとう！', W / 2, H / 2 + 45);
+    ctx.fillStyle = '#54a0ff';
+    ctx.font = Math.max(14, W * 0.025) + 'px sans-serif';
+    ctx.fillText('タップ か スペース で もういちどあそぶ', W / 2, H / 2 + 80);
+  }
+}
+
+// --- Main Loop ---
+let running = false;
+let animId;
+
+function gameLoop() {
+  if (!running) return;
+
+  ctx.clearRect(0, 0, W, H);
+  drawBackground(stages[currentStage]);
+
+  if (gameState === 'playing') {
+    updateBike();
+    updateCamera();
+  } else {
+    // Keep camera steady but still update timer for effects
+    timer += 1 / 60;
+  }
+
+  drawTerrain();
+  if (gameState === 'playing') drawBike();
+  else if (gameState === 'crashed') {
+    drawBike(); // still show wreck position
+    drawCrashScreen();
+  }
+  else if (gameState === 'clear') {
+    drawBike();
+    drawClearScreen();
+  }
+  drawHUD();
+
+  animId = requestAnimationFrame(gameLoop);
+}
+
+// --- Input ---
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {
+    if (gameState === 'crashed') initBike();
+    else if (gameState === 'clear') {
+      if (currentStage < stages.length - 1) {
+        currentStage++;
+        initStage();
+      } else {
+        currentStage = 0;
+        initStage();
+      }
+    }
+  }
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Touch
+function handleTouches(e) {
+  e.preventDefault();
+  touchL = false; touchR = false;
+  for (const touch of e.touches) {
+    if (touch.clientX < W / 2) touchL = true;
+    else touchR = true;
+  }
+}
+canvas.addEventListener('touchstart', e => {
+  handleTouches(e);
+  if (gameState === 'crashed') initBike();
+  else if (gameState === 'clear') {
+    if (currentStage < stages.length - 1) {
+      currentStage++;
+      initStage();
+    } else {
+      currentStage = 0;
+      initStage();
+    }
+  }
+});
+canvas.addEventListener('touchmove', handleTouches);
+canvas.addEventListener('touchend', e => {
+  handleTouches(e);
+  if (e.touches.length === 0) { touchL = false; touchR = false; }
+});
+
+// Click fallback for crash/clear
+canvas.addEventListener('click', () => {
+  if (gameState === 'crashed') initBike();
+  else if (gameState === 'clear') {
+    if (currentStage < stages.length - 1) {
+      currentStage++;
+      initStage();
+    } else {
+      currentStage = 0;
+      initStage();
+    }
+  }
+});
+
+// --- Start ---
+function startGame() {
+  overlay.classList.add('hidden');
+  buildStages();
+  currentStage = 0;
+  initStage();
+  running = true;
+  gameLoop();
+}
+
+// Also allow starting with keyboard
+window.addEventListener('keydown', function firstKey(e) {
+  if (!running && (e.code === 'Space' || e.code === 'Enter')) {
+    startGame();
+    window.removeEventListener('keydown', firstKey);
+  }
+});
+</script>
+</body>
+</html>

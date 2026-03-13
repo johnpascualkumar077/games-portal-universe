@@ -5,7 +5,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1612287230202-1ff1d85d1bdf?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'でんしゃをよけながらコインをあつめて走りつづけよう！',
     description: 'サブウェイサーファーズは、カラフルなまちを走りぬけるゲームだよ。ひだり・みぎにうごいたり、ジャンプしたり、スライディングしたりしてでんしゃをよけよう。コインをあつめるとキャラクターやアイテムがもらえるよ。かんたんなそうさでだれでもすぐにあそべるけど、はやくなるとドキドキするよ！',
-    url: 'https://poki.com/en/g/subway-surfers'
+    url: 'games/runner.html'
   },
   {
     title: 'モトX3M',
@@ -13,7 +13,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1558981001-19911d9d8b5b?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'バイクでジャンプ！しょうがいぶつをよけてゴールをめざそう。',
     description: 'モトX3Mは、バイクにのってコースをクリアするゲームだよ。ジャンプだい、ループ、うごくしょうがいぶつがいっぱい！スピードをだしすぎるとふっとんじゃうから、バランスがだいじ。しっぱいしてもすぐやりなおせるから、なんどもチャレンジしよう！ステージがすすむとどんどんむずかしくなるよ。',
-    url: 'https://poki.com/en/g/moto-x3m'
+    url: 'games/bike.html'
   },
   {
     title: 'スティックマンフック',
@@ -21,7 +21,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1611996575749-79a3a250f948?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'タップでぶらさがって、とんで、ゴールまでとどけ！',
     description: 'スティックマンフックは、フックでぶらさがってとぶゲームだよ。タップするだけのかんたんそうさ！でもタイミングがだいじで、うまくとべるとすごくきもちいい。ステージはみじかいから、サクサクあそべるよ。きれいなうごきでゴールできたときのたっせいかんはさいこう！',
-    url: 'https://poki.com/en/g/stickman-hook'
+    url: 'games/swing.html'
   },
   {
     title: 'テトリス',
@@ -29,7 +29,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1632501641765-e568d28b0015?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'おちてくるブロックをならべて、よこいちれつをけそう！',
     description: 'テトリスは、うえからおちてくるブロックをくるくるまわして、よこいちれつにそろえてけすパズルゲームだよ。ルールはかんたんだけど、だんだんはやくなるからドキドキ！どこにおくかかんがえるのがたのしいよ。おわりがないから、じぶんのさいこうスコアをめざしてなんどもチャレンジしよう！',
-    url: 'https://tetris.com/play-tetris'
+    url: 'games/tetris.html'
   },
   {
     title: 'テンプルラン2',
@@ -37,7 +37,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'にげろ！ジャンプとスライドでワナをよけてコインをゲット！',
     description: 'テンプルラン2は、いせきのなかをはしってにげるゲームだよ。まがりかど、がけ、ひのワナがつぎつぎでてくるから、すばやくよけよう！コインをあつめるとキャラクターやパワーアップがもらえるよ。まいかいちがうコースだから、あきずにあそべるよ。じぶんのきろくをこうしんしよう！',
-    url: 'https://poki.com/en/g/temple-run-2'
+    url: 'games/temple-run.html'
   },
   {
     title: '2048',
@@ -45,7 +45,7 @@ const games = [
     thumb: 'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'おなじすうじをくっつけて、2048をめざそう！',
     description: '2048は、すうじのパズルゲームだよ。おなじすうじをスライドしてくっつけると、あたらしいすうじになるよ。2、4、8、16… どんどんおおきくして、2048をめざそう！かんたんそうだけど、マスがうまっちゃうとゲームオーバー。よくかんがえておくばしょをきめよう！ゆっくりあそべるからリラックスしてたのしめるよ。',
-    url: 'https://play2048.co/'
+    url: 'games/2048.html'
   }
 ];
 

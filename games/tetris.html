@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>テトリス</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a0a2e;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Hiragino Kaku Gothic Pro', 'Yu Gothic', 'Meiryo', sans-serif;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  #game-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    max-height: 100vh;
+    padding: 10px;
+  }
+  canvas { display: block; border-radius: 4px; }
+  #main-canvas {
+    border: 3px solid #7b2ff7;
+    box-shadow: 0 0 20px rgba(123, 47, 247, 0.4);
+  }
+  #side-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .label {
+    font-size: 14px;
+    color: #c8a0ff;
+    letter-spacing: 2px;
+  }
+  .value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(123, 47, 247, 0.6);
+  }
+  .info-box {
+    background: rgba(123, 47, 247, 0.15);
+    border: 2px solid #5a1fb0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: center;
+    min-width: 110px;
+  }
+  #next-canvas {
+    border: 2px solid #5a1fb0;
+    border-radius: 8px;
+    background: rgba(123, 47, 247, 0.1);
+  }
+  #overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10, 5, 25, 0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: 42px;
+    color: #ff4f8b;
+    text-shadow: 0 0 20px rgba(255, 79, 139, 0.6);
+  }
+  #overlay .final-score {
+    font-size: 22px;
+    color: #c8a0ff;
+  }
+  #overlay button {
+    font-family: inherit;
+    font-size: 20px;
+    padding: 12px 32px;
+    background: linear-gradient(135deg, #7b2ff7, #ff4f8b);
+    color: #fff;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 0 20px rgba(123, 47, 247, 0.5);
+    transition: transform 0.15s;
+  }
+  #overlay button:hover { transform: scale(1.05); }
+  #start-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10, 5, 25, 0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    z-index: 10;
+  }
+  #start-overlay.hidden { display: none; }
+  #start-overlay h1 {
+    font-size: 48px;
+    background: linear-gradient(135deg, #7b2ff7, #ff4f8b, #ffd700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #start-overlay button {
+    font-family: inherit;
+    font-size: 22px;
+    padding: 14px 40px;
+    background: linear-gradient(135deg, #7b2ff7, #ff4f8b);
+    color: #fff;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 0 20px rgba(123, 47, 247, 0.5);
+    transition: transform 0.15s;
+  }
+  #start-overlay button:hover { transform: scale(1.05); }
+  .controls-hint {
+    font-size: 13px;
+    color: #8866aa;
+    text-align: center;
+    line-height: 1.8;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <canvas id="main-canvas"></canvas>
+  <div id="side-panel">
+    <div class="info-box">
+      <div class="label">スコア</div>
+      <div class="value" id="score-val">0</div>
+    </div>
+    <div class="info-box">
+      <div class="label">レベル</div>
+      <div class="value" id="level-val">1</div>
+    </div>
+    <div class="info-box">
+      <div class="label">ライン</div>
+      <div class="value" id="lines-val">0</div>
+    </div>
+    <div class="info-box">
+      <div class="label">つぎのブロック</div>
+      <canvas id="next-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="start-overlay">
+  <h1>テトリス</h1>
+  <button id="start-btn">あそぶ</button>
+  <div class="controls-hint">
+    ← → いどう &nbsp; ↑ かいてん<br>
+    ↓ ソフトドロップ &nbsp; スペース ハードドロップ
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <h1>ゲームオーバー</h1>
+  <div class="final-score" id="final-score"></div>
+  <button id="retry-btn">もういちどあそぶ</button>
+</div>
+
+<script>
+(function() {
+  const COLS = 10, ROWS = 20;
+  const PIECES = {
+    I: { shape: [[0,0],[1,0],[2,0],[3,0]], color: '#00e5ff' },
+    O: { shape: [[0,0],[1,0],[0,1],[1,1]], color: '#ffd600' },
+    T: { shape: [[0,0],[1,0],[2,0],[1,1]], color: '#d500f9' },
+    S: { shape: [[1,0],[2,0],[0,1],[1,1]], color: '#00e676' },
+    Z: { shape: [[0,0],[1,0],[1,1],[2,1]], color: '#ff1744' },
+    J: { shape: [[0,0],[0,1],[1,1],[2,1]], color: '#2979ff' },
+    L: { shape: [[2,0],[0,1],[1,1],[2,1]], color: '#ff9100' }
+  };
+  const PIECE_NAMES = Object.keys(PIECES);
+  const LINE_SCORES = [0, 100, 300, 500, 800];
+
+  const mainCanvas = document.getElementById('main-canvas');
+  const mainCtx = mainCanvas.getContext('2d');
+  const nextCanvas = document.getElementById('next-canvas');
+  const nextCtx = nextCanvas.getContext('2d');
+  const scoreEl = document.getElementById('score-val');
+  const levelEl = document.getElementById('level-val');
+  const linesEl = document.getElementById('lines-val');
+  const overlay = document.getElementById('overlay');
+  const startOverlay = document.getElementById('start-overlay');
+  const finalScoreEl = document.getElementById('final-score');
+
+  let cellSize, grid, current, nextPiece, score, level, lines, gameOver, dropTimer, dropInterval, animId;
+
+  function resize() {
+    const maxH = window.innerHeight - 20;
+    const maxW = window.innerWidth * 0.6;
+    cellSize = Math.floor(Math.min(maxH / ROWS, maxW / COLS));
+    if (cellSize < 16) cellSize = 16;
+    mainCanvas.width = COLS * cellSize;
+    mainCanvas.height = ROWS * cellSize;
+    const nc = Math.floor(cellSize * 0.8);
+    nextCanvas.width = nc * 4;
+    nextCanvas.height = nc * 4;
+    nextCanvas.dataset.cs = nc;
+  }
+
+  function randomPiece() {
+    const name = PIECE_NAMES[Math.floor(Math.random() * PIECE_NAMES.length)];
+    const p = PIECES[name];
+    return {
+      blocks: p.shape.map(b => [b[0], b[1]]),
+      color: p.color,
+      x: Math.floor(COLS / 2) - 2,
+      y: 0
+    };
+  }
+
+  function collides(blocks, ox, oy) {
+    for (const [bx, by] of blocks) {
+      const nx = bx + ox, ny = by + oy;
+      if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+      if (ny >= 0 && grid[ny][nx]) return true;
+    }
+    return false;
+  }
+
+  function rotate(blocks) {
+    // Find bounding box center, rotate 90 CW
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of blocks) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return blocks.map(([x, y]) => {
+      const dx = x - cx, dy = y - cy;
+      return [Math.round(cx + dy), Math.round(cy - dx)];
+    });
+  }
+
+  function lock() {
+    for (const [bx, by] of current.blocks) {
+      const gx = bx + current.x, gy = by + current.y;
+      if (gy < 0) { endGame(); return; }
+      grid[gy][gx] = current.color;
+    }
+    clearLines();
+    current = nextPiece;
+    nextPiece = randomPiece();
+    if (collides(current.blocks, current.x, current.y)) { endGame(); }
+  }
+
+  function clearLines() {
+    let cleared = 0;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (grid[r].every(c => c)) {
+        grid.splice(r, 1);
+        grid.unshift(new Array(COLS).fill(null));
+        cleared++;
+        r++; // recheck row
+      }
+    }
+    if (cleared > 0) {
+      score += LINE_SCORES[cleared] * level;
+      lines += cleared;
+      level = Math.floor(lines / 10) + 1;
+      dropInterval = Math.max(50, 1000 - (level - 1) * 80);
+      scoreEl.textContent = score;
+      levelEl.textContent = level;
+      linesEl.textContent = lines;
+    }
+  }
+
+  function ghostY() {
+    let gy = current.y;
+    while (!collides(current.blocks, current.x, gy + 1)) gy++;
+    return gy;
+  }
+
+  function drawBlock(ctx, x, y, color, cs, alpha) {
+    ctx.globalAlpha = alpha || 1;
+    ctx.fillStyle = color;
+    ctx.fillRect(x * cs + 1, y * cs + 1, cs - 2, cs - 2);
+    // highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(x * cs + 1, y * cs + 1, cs - 2, 4);
+    ctx.fillRect(x * cs + 1, y * cs + 1, 4, cs - 2);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    const cs = cellSize;
+    mainCtx.fillStyle = '#120828';
+    mainCtx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
+
+    // Grid lines
+    mainCtx.strokeStyle = 'rgba(123,47,247,0.1)';
+    mainCtx.lineWidth = 1;
+    for (let c = 1; c < COLS; c++) {
+      mainCtx.beginPath();
+      mainCtx.moveTo(c * cs, 0);
+      mainCtx.lineTo(c * cs, ROWS * cs);
+      mainCtx.stroke();
+    }
+    for (let r = 1; r < ROWS; r++) {
+      mainCtx.beginPath();
+      mainCtx.moveTo(0, r * cs);
+      mainCtx.lineTo(COLS * cs, r * cs);
+      mainCtx.stroke();
+    }
+
+    // Locked blocks
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (grid[r][c]) drawBlock(mainCtx, c, r, grid[r][c], cs);
+      }
+    }
+
+    if (!gameOver && current) {
+      // Ghost
+      const gy = ghostY();
+      if (gy !== current.y) {
+        for (const [bx, by] of current.blocks) {
+          drawBlock(mainCtx, bx + current.x, by + gy, current.color, cs, 0.2);
+        }
+      }
+      // Current piece
+      for (const [bx, by] of current.blocks) {
+        if (by + current.y >= 0) {
+          drawBlock(mainCtx, bx + current.x, by + current.y, current.color, cs);
+        }
+      }
+    }
+
+    // Next piece preview
+    const ncs = parseInt(nextCanvas.dataset.cs) || 20;
+    nextCtx.fillStyle = 'rgba(18,8,40,0.8)';
+    nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+    if (nextPiece) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of nextPiece.blocks) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+      const pw = maxX - minX + 1, ph = maxY - minY + 1;
+      const offX = (4 - pw) / 2 - minX;
+      const offY = (4 - ph) / 2 - minY;
+      for (const [bx, by] of nextPiece.blocks) {
+        drawBlock(nextCtx, bx + offX, by + offY, nextPiece.color, ncs);
+      }
+    }
+  }
+
+  function moveLeft() {
+    if (!collides(current.blocks, current.x - 1, current.y)) current.x--;
+  }
+  function moveRight() {
+    if (!collides(current.blocks, current.x + 1, current.y)) current.x++;
+  }
+  function softDrop() {
+    if (!collides(current.blocks, current.x, current.y + 1)) {
+      current.y++;
+      score += 1;
+      scoreEl.textContent = score;
+    }
+  }
+  function hardDrop() {
+    while (!collides(current.blocks, current.x, current.y + 1)) {
+      current.y++;
+      score += 2;
+    }
+    scoreEl.textContent = score;
+    lock();
+  }
+  function rotatePiece() {
+    const rotated = rotate(current.blocks);
+    // Wall kick: try offsets 0, -1, +1, -2, +2
+    for (const kick of [0, -1, 1, -2, 2]) {
+      if (!collides(rotated, current.x + kick, current.y)) {
+        current.blocks = rotated;
+        current.x += kick;
+        return;
+      }
+    }
+  }
+
+  function endGame() {
+    gameOver = true;
+    cancelAnimationFrame(animId);
+    finalScoreEl.textContent = 'スコア: ' + score;
+    overlay.classList.remove('hidden');
+  }
+
+  let lastDrop = 0;
+  function loop(ts) {
+    if (gameOver) return;
+    if (ts - lastDrop > dropInterval) {
+      if (!collides(current.blocks, current.x, current.y + 1)) {
+        current.y++;
+      } else {
+        lock();
+      }
+      lastDrop = ts;
+    }
+    draw();
+    animId = requestAnimationFrame(loop);
+  }
+
+  function init() {
+    resize();
+    grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
+    score = 0; level = 1; lines = 0; gameOver = false;
+    dropInterval = 1000; lastDrop = 0;
+    scoreEl.textContent = '0';
+    levelEl.textContent = '1';
+    linesEl.textContent = '0';
+    overlay.classList.add('hidden');
+    current = randomPiece();
+    nextPiece = randomPiece();
+    draw();
+    animId = requestAnimationFrame(loop);
+  }
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (gameOver || !current) return;
+    switch (e.key) {
+      case 'ArrowLeft': moveLeft(); break;
+      case 'ArrowRight': moveRight(); break;
+      case 'ArrowUp': rotatePiece(); break;
+      case 'ArrowDown': softDrop(); break;
+      case ' ': hardDrop(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+
+  // Touch
+  let touchStartX, touchStartY, touchStartTime;
+  document.addEventListener('touchstart', e => {
+    if (gameOver) return;
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchStartTime = Date.now();
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (gameOver || !current || touchStartX == null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    const dt = Date.now() - touchStartTime;
+    const absDx = Math.abs(dx), absDy = Math.abs(dy);
+    const threshold = 30;
+
+    if (absDx < threshold && absDy < threshold && dt < 250) {
+      // Tap = hard drop
+      hardDrop();
+    } else if (absDx > absDy) {
+      if (dx < -threshold) moveLeft();
+      else if (dx > threshold) moveRight();
+    } else {
+      if (dy < -threshold) rotatePiece();
+      else if (dy > threshold) softDrop();
+    }
+    touchStartX = null;
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('resize', () => { resize(); draw(); });
+
+  document.getElementById('start-btn').addEventListener('click', () => {
+    startOverlay.classList.add('hidden');
+    init();
+  });
+  document.getElementById('retry-btn').addEventListener('click', init);
+})();
+</script>
+</body>
+</html>
