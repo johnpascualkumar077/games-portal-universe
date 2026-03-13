@@ -73,6 +73,29 @@ function applyTheme(themeName) {
   }
 }
 
+
+function initializeAds() {
+  const adConfig = window.UNIVERSE_ADS || {};
+  const adClient = (adConfig.client || '').trim();
+  const adsEnabled = adConfig.enabled !== false;
+  const hasRealClient = adsEnabled && /^ca-pub-\d{10,}$/.test(adClient);
+
+  document.querySelectorAll('.ad-slot').forEach((slot) => {
+    if (hasRealClient) {
+      slot.setAttribute('data-ad-client', adClient);
+      try {
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (_) {
+        slot.classList.add('is-placeholder');
+        slot.textContent = 'Ad failed to load.';
+      }
+    } else {
+      slot.classList.add('is-placeholder');
+      slot.textContent = 'Set your AdSense client/slot IDs to enable ads.';
+    }
+  });
+}
+
 function initializeTheme() {
   const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'default';
   applyTheme(storedTheme);
@@ -182,4 +205,5 @@ fullscreenBtn.addEventListener('click', () => {
 });
 
 initializeTheme();
+initializeAds();
 renderGames();
