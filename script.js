@@ -60,6 +60,32 @@ const closeBtn = document.getElementById('close-modal');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const openTabBtn = document.getElementById('open-tab-btn');
 
+
+const themeSelect = document.getElementById('theme-select');
+const THEME_STORAGE_KEY = 'ui-theme';
+
+function applyTheme(themeName) {
+  const validThemes = ['default', 'xbox', 'nintendo', 'geforcenow', 'playstation'];
+  const nextTheme = validThemes.includes(themeName) ? themeName : 'default';
+  document.body.setAttribute('data-theme', nextTheme);
+  if (themeSelect) {
+    themeSelect.value = nextTheme;
+  }
+}
+
+function initializeTheme() {
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'default';
+  applyTheme(storedTheme);
+
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      applyTheme(themeSelect.value);
+      localStorage.setItem(THEME_STORAGE_KEY, themeSelect.value);
+    });
+  }
+}
+
+
 let activeCategory = 'all';
 function escapeHtml(value) {
   return value
@@ -155,4 +181,5 @@ fullscreenBtn.addEventListener('click', () => {
   else if (iframe.msRequestFullscreen) iframe.msRequestFullscreen();
 });
 
+initializeTheme();
 renderGames();
