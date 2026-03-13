@@ -1,50 +1,50 @@
 const games = [
   {
-    title: 'Subway Surfers',
+    title: 'サブウェイサーファーズ',
     category: 'action',
     thumb: 'https://images.unsplash.com/photo-1612287230202-1ff1d85d1bdf?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Dash through colorful city tracks, dodge trains, and collect coins in fast sessions.',
-    description: 'Subway Surfers is a speed-focused endless runner where your main objective is to survive for as long as possible while collecting coins and power-ups. The controls are simple, but the pace becomes intense quickly, making each run exciting even if you only have a few minutes. You can unlock characters, hoverboards, and score boosters as you improve. The game works well for quick breaks because every attempt feels different, and the bright art style keeps the action readable and fun on both mobile and desktop screens.',
+    shortDescription: 'でんしゃをよけながらコインをあつめて走りつづけよう！',
+    description: 'サブウェイサーファーズは、カラフルなまちを走りぬけるゲームだよ。ひだり・みぎにうごいたり、ジャンプしたり、スライディングしたりしてでんしゃをよけよう。コインをあつめるとキャラクターやアイテムがもらえるよ。かんたんなそうさでだれでもすぐにあそべるけど、はやくなるとドキドキするよ！',
     url: 'https://poki.com/en/g/subway-surfers'
   },
   {
-    title: 'Moto X3M',
+    title: 'モトX3M',
     category: 'driving',
     thumb: 'https://images.unsplash.com/photo-1558981001-19911d9d8b5b?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Race a stunt bike through explosive obstacle tracks and beat your own best time.',
-    description: 'Moto X3M combines racing and physics-based platforming in short, creative levels packed with ramps, loops, and moving hazards. You need to manage speed and balance at the same time, because pushing too hard can send your rider flipping into danger. Restarting is instant, so trial-and-error feels rewarding instead of frustrating. As levels get harder, careful timing becomes more important than pure speed, which gives the game satisfying depth. It is an excellent pick for players who enjoy fast reflex gameplay with a steady progression of increasingly clever track designs.',
+    shortDescription: 'バイクでジャンプ！しょうがいぶつをよけてゴールをめざそう。',
+    description: 'モトX3Mは、バイクにのってコースをクリアするゲームだよ。ジャンプだい、ループ、うごくしょうがいぶつがいっぱい！スピードをだしすぎるとふっとんじゃうから、バランスがだいじ。しっぱいしてもすぐやりなおせるから、なんどもチャレンジしよう！ステージがすすむとどんどんむずかしくなるよ。',
     url: 'https://poki.com/en/g/moto-x3m'
   },
   {
-    title: 'Stickman Hook',
+    title: 'スティックマンフック',
     category: 'arcade',
     thumb: 'https://images.unsplash.com/photo-1611996575749-79a3a250f948?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Swing from point to point with smooth momentum and clear one-tap controls.',
-    description: 'Stickman Hook is an arcade momentum game where you launch, swing, and release at the right moment to fly through compact levels. The core mechanic is very easy to understand, but mastering rhythm and trajectory takes practice, which keeps the gameplay engaging over time. Levels are short and snappy, so it is ideal when you want instant action without a long commitment. Its clean visuals make movement easy to read, and successful swings feel rewarding. If you like score chasing and polished controls, this game delivers a consistently fun experience.',
+    shortDescription: 'タップでぶらさがって、とんで、ゴールまでとどけ！',
+    description: 'スティックマンフックは、フックでぶらさがってとぶゲームだよ。タップするだけのかんたんそうさ！でもタイミングがだいじで、うまくとべるとすごくきもちいい。ステージはみじかいから、サクサクあそべるよ。きれいなうごきでゴールできたときのたっせいかんはさいこう！',
     url: 'https://poki.com/en/g/stickman-hook'
   },
   {
-    title: 'Tetris',
+    title: 'テトリス',
     category: 'puzzle',
     thumb: 'https://images.unsplash.com/photo-1632501641765-e568d28b0015?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Stack falling blocks efficiently, clear lines, and survive as speed increases.',
-    description: 'Tetris is a timeless puzzle classic that challenges spatial thinking, planning, and composure under pressure. Different block shapes fall from above, and your task is to rotate and place them to complete horizontal lines. As lines clear, your score rises and the pace gradually increases, demanding quicker decisions. The rules are simple enough for beginners, yet high-level play rewards strategy and precision. Because each round is compact and endlessly replayable, Tetris remains one of the best choices for players who enjoy skill-based puzzle sessions that are easy to start and hard to stop.',
+    shortDescription: 'おちてくるブロックをならべて、よこいちれつをけそう！',
+    description: 'テトリスは、うえからおちてくるブロックをくるくるまわして、よこいちれつにそろえてけすパズルゲームだよ。ルールはかんたんだけど、だんだんはやくなるからドキドキ！どこにおくかかんがえるのがたのしいよ。おわりがないから、じぶんのさいこうスコアをめざしてなんどもチャレンジしよう！',
     url: 'https://tetris.com/play-tetris'
   },
   {
-    title: 'Temple Run 2',
+    title: 'テンプルラン2',
     category: 'action',
     thumb: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Escape dangerous paths with quick swipes, jumps, slides, and coin collecting.',
-    description: 'Temple Run 2 delivers a cinematic endless-runner experience with winding paths, sharp turns, and environmental hazards that force quick reactions. You collect coins while avoiding cliffs, fire traps, and obstacles that appear with little warning. The movement system is simple, but long runs demand focus and quick pattern recognition. Unlocking upgrades and characters adds a sense of progression between sessions. It is a strong option for players who enjoy high-energy action with short rounds, since every run offers a fresh sequence of risks and opportunities to beat your personal high score.',
+    shortDescription: 'にげろ！ジャンプとスライドでワナをよけてコインをゲット！',
+    description: 'テンプルラン2は、いせきのなかをはしってにげるゲームだよ。まがりかど、がけ、ひのワナがつぎつぎでてくるから、すばやくよけよう！コインをあつめるとキャラクターやパワーアップがもらえるよ。まいかいちがうコースだから、あきずにあそべるよ。じぶんのきろくをこうしんしよう！',
     url: 'https://poki.com/en/g/temple-run-2'
   },
   {
     title: '2048',
     category: 'puzzle',
     thumb: 'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?w=900&q=80&auto=format&fit=crop',
-    shortDescription: 'Slide numbered tiles, combine matches, and build toward the 2048 target tile.',
-    description: '2048 is a strategic number puzzle that looks simple but rewards careful long-term planning. You slide tiles across a small grid, combining matching values to create larger numbers while preventing the board from filling up. Each move matters because random tile spawns can quickly limit your options. The challenge is balancing short-term merges with a stable board setup for future turns. It is perfect for thoughtful players who enjoy calm but mentally engaging gameplay. With no timer pressure, 2048 offers a relaxing pace while still providing a satisfying sense of progress and mastery.',
+    shortDescription: 'おなじすうじをくっつけて、2048をめざそう！',
+    description: '2048は、すうじのパズルゲームだよ。おなじすうじをスライドしてくっつけると、あたらしいすうじになるよ。2、4、8、16… どんどんおおきくして、2048をめざそう！かんたんそうだけど、マスがうまっちゃうとゲームオーバー。よくかんがえておくばしょをきめよう！ゆっくりあそべるからリラックスしてたのしめるよ。',
     url: 'https://play2048.co/'
   }
 ];
@@ -79,21 +79,21 @@ function renderGames() {
   });
 
   if (filteredGames.length === 0) {
-    gameGrid.innerHTML = '<div class="empty-state">No games found. Try a different search or category filter.</div>';
+    gameGrid.innerHTML = '<div class="empty-state">ゲームがみつかりませんでした。ほかのことばでさがしてみてね！</div>';
     return;
   }
 
   gameGrid.innerHTML = filteredGames
     .map((game) => `
       <article class="game-card">
-        <img src="${game.thumb}" alt="${game.title} thumbnail" class="game-thumb" loading="lazy">
+        <img src="${game.thumb}" alt="${escapeHtml(game.title)}のがぞう" class="game-thumb" loading="lazy">
         <div class="game-body">
           <div class="game-topline">
             <h2 class="game-title">${escapeHtml(game.title)}</h2>
             <span class="game-category">${escapeHtml(game.category)}</span>
           </div>
           <p class="game-short">${escapeHtml(game.shortDescription)}</p>
-          <button class="play-btn" data-title="${escapeHtml(game.title)}">Play Now</button>
+          <button class="play-btn" data-title="${escapeHtml(game.title)}">▶ あそぶ！</button>
         </div>
       </article>
     `)
