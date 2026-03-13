@@ -10,7 +10,7 @@ const games = [
   {
     title: 'Moto X3M',
     category: 'driving',
-    thumb: 'https://images.unsplash.com/photo-1558981001-19911d9d8b5b?w=900&q=80&auto=format&fit=crop',
+    thumb: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'Race a stunt bike through explosive obstacle tracks and beat your own best time.',
     description: 'Moto X3M combines racing and physics-based platforming in short, creative levels packed with ramps, loops, and moving hazards. You need to manage speed and balance at the same time, because pushing too hard can send your rider flipping into danger. Restarting is instant, so trial-and-error feels rewarding instead of frustrating. As levels get harder, careful timing becomes more important than pure speed, which gives the game satisfying depth. It is an excellent pick for players who enjoy fast reflex gameplay with a steady progression of increasingly clever track designs.',
     url: 'https://poki.com/en/g/moto-x3m'
