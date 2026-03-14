@@ -10,7 +10,7 @@ const games = [
   {
     title: 'Moto X3M',
     category: 'driving',
-    thumb: 'https://images.unsplash.com/photo-1558981001-19911d9d8b5b?w=900&q=80&auto=format&fit=crop',
+    thumb: 'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=900&q=80&auto=format&fit=crop',
     shortDescription: 'Race a stunt bike through explosive obstacle tracks and beat your own best time.',
     description: 'Moto X3M combines racing and physics-based platforming in short, creative levels packed with ramps, loops, and moving hazards. You need to manage speed and balance at the same time, because pushing too hard can send your rider flipping into danger. Restarting is instant, so trial-and-error feels rewarding instead of frustrating. As levels get harder, careful timing becomes more important than pure speed, which gives the game satisfying depth. It is an excellent pick for players who enjoy fast reflex gameplay with a steady progression of increasingly clever track designs.',
     url: 'https://poki.com/en/g/moto-x3m'
@@ -59,6 +59,55 @@ const modalDescription = document.getElementById('modal-description');
 const closeBtn = document.getElementById('close-modal');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const openTabBtn = document.getElementById('open-tab-btn');
+
+
+const themeSelect = document.getElementById('theme-select');
+const THEME_STORAGE_KEY = 'ui-theme';
+
+function applyTheme(themeName) {
+  const validThemes = ['default', 'xbox', 'nintendo', 'geforcenow', 'playstation'];
+  const nextTheme = validThemes.includes(themeName) ? themeName : 'default';
+  document.body.setAttribute('data-theme', nextTheme);
+  if (themeSelect) {
+    themeSelect.value = nextTheme;
+  }
+}
+
+
+function initializeAds() {
+  const adConfig = window.UNIVERSE_ADS || {};
+  const adClient = (adConfig.client || '').trim();
+  const adsEnabled = adConfig.enabled !== false;
+  const hasRealClient = adsEnabled && /^ca-pub-\d{10,}$/.test(adClient);
+
+  document.querySelectorAll('.ad-slot').forEach((slot) => {
+    if (hasRealClient) {
+      slot.setAttribute('data-ad-client', adClient);
+      try {
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (_) {
+        slot.classList.add('is-placeholder');
+        slot.textContent = 'Ad failed to load.';
+      }
+    } else {
+      slot.classList.add('is-placeholder');
+      slot.textContent = 'Set your AdSense client/slot IDs to enable ads.';
+    }
+  });
+}
+
+function initializeTheme() {
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'default';
+  applyTheme(storedTheme);
+
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      applyTheme(themeSelect.value);
+      localStorage.setItem(THEME_STORAGE_KEY, themeSelect.value);
+    });
+  }
+}
+
 
 let activeCategory = 'all';
 function escapeHtml(value) {
@@ -155,4 +204,6 @@ fullscreenBtn.addEventListener('click', () => {
   else if (iframe.msRequestFullscreen) iframe.msRequestFullscreen();
 });
 
+initializeTheme();
+initializeAds();
 renderGames();
